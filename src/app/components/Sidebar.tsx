@@ -116,7 +116,7 @@ export function Sidebar({ onHamburgerOpen }: SidebarProps) {
         <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>RK</div>
         {!collapsed && (
           <div>
-            <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Rahim Karim</div>
+            <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Adnan</div>
             <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(39,194,138,0.15)", color: "#27C28A", fontSize: 9, fontFamily: "DM Mono, monospace" }}>Low Risk</span>
           </div>
         )}

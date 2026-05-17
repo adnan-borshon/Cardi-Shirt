@@ -75,7 +75,7 @@ function genData(range: string, type: "health" | "hr" | "hrv" | "rhythm") {
 const eventMarkers = [
   { day: 5, type: "alert", label: "Brief irregular rhythm", score: 58 },
   { day: 12, type: "anomaly", label: "Elevated afternoon HR", score: 62 },
-  { day: 18, type: "doctor", label: "Record shared with Dr. Chen", score: 71 },
+  { day: 18, type: "doctor", label: "Record shared with DR. Rohan", score: 71 },
   { day: 24, type: "symptom", label: "Patient logged fatigue", score: 66 },
 ];
 

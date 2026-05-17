@@ -2,10 +2,10 @@ import { Plus } from "lucide-react";
 import { useTokens } from "./ThemeContext";
 
 const family = [
-  { name: "Fatima", initials: "FK", online: true, lastSeen: "Viewing now", color: "#E8304A" },
-  { name: "Tariq", initials: "TK", online: true, lastSeen: "5 min ago", color: "#F5A623" },
-  { name: "Nadia", initials: "NK", online: false, lastSeen: "2h ago", color: "#27C28A" },
-  { name: "Dr. Hasan", initials: "DH", online: false, lastSeen: "Yesterday", color: "#8890B8" },
+  { name: "Rehnuma", initials: "R", online: true, lastSeen: "Viewing now", color: "#E8304A" },
+  { name: "Rumi", initials: "R", online: true, lastSeen: "5 min ago", color: "#F5A623" },
+  { name: "Jabed", initials: "J", online: false, lastSeen: "2h ago", color: "#27C28A" },
+  { name: "DR. Rohan", initials: "DR", online: false, lastSeen: "Yesterday", color: "#8890B8" },
 ];
 
 export function FamilyCircle() {

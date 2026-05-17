@@ -13,7 +13,7 @@ interface Message {
 }
 
 const initialMessages: Message[] = [
-  { id: 1, from: "ai", text: "Good afternoon, Rahim. Your heart has been steady today — your resting rate is 72 BPM and your rhythm is normal. How can I help you?", time: "3:40 PM" },
+  { id: 1, from: "ai", text: "Good afternoon, Adnan. Your heart has been steady today — your resting rate is 72 BPM and your rhythm is normal. How can I help you?", time: "3:40 PM" },
   { id: 2, from: "ai", text: "CardiShirt noticed your resting heart rate has been slightly lower than your usual this afternoon — this can sometimes mean you're more relaxed than usual. No action needed.", proactive: true, time: "3:15 PM" },
 ];
 
@@ -37,11 +37,11 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
     setTyping(true);
     setTimeout(() => {
       const responses: Record<string, string> = {
-        "Is my heart okay today?": "Yes, Rahim — your heart is doing well today. Your rhythm has been consistently normal sinus, your heart rate has stayed between 68–75 BPM, and your HRV is in a healthy range. Your AI Health Score is 87, which is 3 points better than yesterday.",
+        "Is my heart okay today?": "Yes, Adnan — your heart is doing well today. Your rhythm has been consistently normal sinus, your heart rate has stayed between 68–75 BPM, and your HRV is in a healthy range. Your AI Health Score is 87, which is 3 points better than yesterday.",
         "How was my sleep last night?": "Based on your overnight ECG data, you had a restful night. Your heart rate dropped to a healthy 58 BPM during deep sleep, and no rhythm irregularities were detected. Your HRV was elevated during sleep, which is a positive sign of recovery.",
         "What should I avoid today?": "Based on your recent patterns, I'd recommend avoiding strenuous exercise in the afternoon heat, as your heart rate tends to elevate more than usual between 2–4 PM. Stay hydrated and consider a gentle walk in the cooler evening hours instead.",
       };
-      const aiText = responses[text] || "Your heart data looks normal right now. Your rhythm is regular and your heart rate is within your personal baseline. If you have specific concerns, I'd recommend discussing them with Dr. Hasan at your next appointment.";
+      const aiText = responses[text] || "Your heart data looks normal right now. Your rhythm is regular and your heart rate is within your personal baseline. If you have specific concerns, I'd recommend discussing them with DR. Rohan at your next appointment.";
       setTyping(false);
       setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: aiText, time: "Now", hasECG: text.toLowerCase().includes("heart") && Math.random() > 0.5 }]);
     }, 1500);

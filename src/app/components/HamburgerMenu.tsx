@@ -81,7 +81,7 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>RK</div>
                   <div>
-                    <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 14 }}>Rahim Karim</div>
+                    <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 14 }}>Adnan</div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(39,194,138,0.15)", color: "#27C28A", fontFamily: "DM Mono, monospace", fontSize: 10 }}>Stable</span>
                       <span style={{ color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 13 }}>72 BPM</span>
@@ -172,7 +172,7 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
             <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between" style={{ borderTop: `0.5px solid ${tk.cardBorder}`, background: tk.cardElevated }}>
               <div className="flex items-center gap-1.5">
                 <User size={12} style={{ color: tk.textMuted }} />
-                <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Patient: Rahim</span>
+                <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Patient: Adnan</span>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setLang("en")} style={{ color: lang === "en" ? tk.textPrimary : tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 11, textDecoration: lang === "en" ? "underline" : "none" }}>EN</button>

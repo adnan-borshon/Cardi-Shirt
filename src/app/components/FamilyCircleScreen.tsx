@@ -60,28 +60,28 @@ interface Member {
 
 const MEMBERS_INIT: Member[] = [
   {
-    id: "m1", name: "Fatema Khatun", initials: "FK", relationship: "Daughter",
+    id: "m1", name: "Rehnuma", initials: "FK", relationship: "Daughter",
     phone: "+880 1712-345678", email: "fatema@email.com", avatarColor: "#E8304A",
     status: "active", lastActivity: "Viewing your dashboard now",
     notifLevel: "all", isEmergencyContact: true, emergencyPriority: 1,
     permissions: { ecg: true, diary: true, alerts: true, dashboard: true },
   },
   {
-    id: "m2", name: "Rifat Ahmed", initials: "RA", relationship: "Son",
+    id: "m2", name: "Rumi", initials: "RA", relationship: "Son",
     phone: "+880 1898-765432", email: "rifat@email.com", avatarColor: "#5B8AF0",
     status: "recent", lastActivity: "Viewed your data 42 min ago",
     notifLevel: "critical", isEmergencyContact: true, emergencyPriority: 2,
     permissions: { ecg: true, diary: false, alerts: true, dashboard: true },
   },
   {
-    id: "m3", name: "Karim Uddin", initials: "KU", relationship: "Spouse",
+    id: "m3", name: "Jabed", initials: "KU", relationship: "Spouse",
     phone: "+880 1552-112233", email: "", avatarColor: "#27C28A",
     status: "inactive", lastActivity: "Has not opened the app in 3 days",
     notifLevel: "daily", isEmergencyContact: true, emergencyPriority: 3,
     permissions: { ecg: false, diary: false, alerts: true, dashboard: true },
   },
   {
-    id: "m4", name: "Dr. Nusrat Jahan", initials: "NJ", relationship: "Caregiver",
+    id: "m4", name: "DR. Rohan", initials: "NJ", relationship: "Caregiver",
     phone: "+880 1911-556677", email: "drnusrat@hospital.bd", avatarColor: "#F5A623",
     status: "pending", lastActivity: "Invitation sent — awaiting acceptance",
     notifLevel: "all", isEmergencyContact: false, emergencyPriority: 0,
@@ -472,7 +472,7 @@ function AddMemberModal({ onClose }: { onClose: () => void }) {
         <div className="p-6 flex flex-col gap-4">
           <div>
             <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 4 }}>Full Name</label>
-            <input placeholder="e.g. Fatema Khatun" style={iStyle} />
+            <input placeholder="e.g. Rehnuma" style={iStyle} />
           </div>
           <div>
             <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 4 }}>Relationship</label>
@@ -673,9 +673,9 @@ function AlertSimulationModal({ countdownTotal, onClose }: { countdownTotal: num
 
             <div className="flex flex-col gap-2 mb-4">
               {[
-                { label: "Fatema Khatun", status: "Alerted — on the way", color: c.green },
-                { label: "Rifat Ahmed", status: "Notification sent", color: c.amber },
-                { label: "Karim Uddin", status: "Not yet seen", color: c.gray },
+                { label: "Rehnuma", status: "Alerted — on the way", color: c.green },
+                { label: "Rumi", status: "Notification sent", color: c.amber },
+                { label: "Jabed", status: "Not yet seen", color: c.gray },
               ].map((f, i) => (
                 <div key={i} className="flex items-center justify-between">
                   <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: "#F0F2FF" }}>{f.label}</span>
@@ -734,7 +734,7 @@ function LiveStatusPanel({ members }: { members: Member[] }) {
       <div style={{ background: c.rightCard, border: `1px solid ${c.cardBorder}`, borderRadius: 12, padding: 16, boxShadow: c.shadow }}>
         <div className="flex items-start justify-between">
           <div>
-            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500, color: c.text }}>Rahim Uddin</div>
+            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500, color: c.text }}>Adnan</div>
             <div className="flex items-baseline gap-1.5 mt-1">
               <span style={{ fontFamily: "DM Mono, monospace", fontSize: 36, color: c.green }}>72</span>
               <span style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: c.muted }}>BPM</span>
@@ -839,7 +839,7 @@ function LiveStatusPanel({ members }: { members: Member[] }) {
         </div>
         <div className="flex flex-col gap-2.5">
           {[
-            { label: "Primary emergency contact set", ok: true, detail: "Fatema Khatun" },
+            { label: "Primary emergency contact set", ok: true, detail: "Rehnuma" },
             { label: "Automatic dispatch enabled", ok: true, detail: "60s response window" },
             { label: "Ambulance service registered", ok: true, detail: "Dhaka Ambulance Service" },
           ].map((item, i) => (
@@ -1096,7 +1096,7 @@ export function FamilyCircleScreen() {
                     <User size={14} style={{ color: c.secondary }} />
                     <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>Primary Doctor</span>
                   </div>
-                  <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500, color: c.text }}>Dr. Hasan Ali</div>
+                  <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500, color: c.text }}>DR. Rohan Ali</div>
                   <div style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.secondary }}>+880 1911-223344</div>
                   <button className="mt-2" style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.red }}>Edit</button>
                 </div>

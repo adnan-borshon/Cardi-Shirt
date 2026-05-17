@@ -30,7 +30,7 @@ export function DailyCheckIn() {
           <>
             <div className="flex items-center gap-2 mb-3">
               <Sun size={16} style={{ color: tk.amber }} />
-              <span style={{ color: tk.amber, fontFamily: "Syne, sans-serif", fontSize: 13 }}>Good morning, Rahim</span>
+              <span style={{ color: tk.amber, fontFamily: "Syne, sans-serif", fontSize: 13 }}>Good morning, Adnan</span>
             </div>
             <div className="space-y-3">
               {questions.map((q) => (
@@ -56,7 +56,7 @@ export function DailyCheckIn() {
             <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(39,194,138,0.2)" }}>
               <Check size={14} style={{ color: "#27C28A" }} />
             </div>
-            <span style={{ color: "#27C28A", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Check-in complete — thank you, Rahim!</span>
+            <span style={{ color: "#27C28A", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Check-in complete — thank you, Adnan!</span>
           </motion.div>
         )}
       </motion.div>

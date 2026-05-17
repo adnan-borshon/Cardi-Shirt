@@ -5,6 +5,9 @@ const http=require("http");
 const {Server}=require("socket.io");
 const {getDb,persist}=require("./db");
 const {GoogleGenerativeAI}=require("@google/generative-ai");
+const {calculateBPM,calculateSpO2}=require("./signalProcessing");
+
+let lastInsertTime=0;
 
 const PORT=process.env.PORT||4000;
 const app=express();
@@ -43,21 +46,27 @@ res.json({status:"ok",time:new Date().toISOString()});
 // ---------- ESP32 Data Ingestion (Phase 2 + 3) ----------
 app.post("/api/esp32/data",async(req,res)=>{
 try{
-const{bpm=0,temp=0,fall_detected=false,ecg_array=null}=req.body;
+const{temp=0,fall_detected=false,ecg_array=null,ir_array=[],red_array=[]}=req.body;
+const bpm=calculateBPM(ir_array);
+const spo2=calculateSpO2(ir_array,red_array);
 const db=await getDb();
 const ts=new Date().toISOString();
+const now=Date.now();
 
-// Insert vitals
+// Throttled Insert vitals (every 60s)
+if(now-lastInsertTime>=60000){
 db.run("INSERT INTO realtime_vitals(bpm,temp,fall_detected,timestamp)VALUES(?,?,?,?)",[bpm,temp,fall_detected?1:0,ts]);
 persist();
+lastInsertTime=now;
+}
 
 // Emit to frontend via WebSocket
-const vitals={bpm,temp,fall_detected,timestamp:ts};
+const vitals={bpm,spo2,temp,fall_detected,ecg_array,timestamp:ts};
 io.emit("vitals",vitals);
-console.log(`[DATA] bpm=${bpm} temp=${temp} fall=${fall_detected}`);
+console.log(`[DATA] bpm=${bpm} spo2=${spo2} temp=${temp} fall=${fall_detected}`);
 
 // --- Phase 3: SOS Logic ---
-const isDangerous=fall_detected||(bpm>150)||(bpm>0&&bpm<35);
+const isDangerous=fall_detected||(bpm>120)||(bpm>0&&bpm<50);
 if(isDangerous&&twilioClient){
 const reason=fall_detected?"FALL DETECTED":`DANGEROUS BPM: ${bpm}`;
 try{

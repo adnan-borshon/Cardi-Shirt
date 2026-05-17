@@ -27,6 +27,11 @@ waveform_data TEXT,
 ai_summary TEXT,
 timestamp TEXT DEFAULT(datetime('now'))
 )`);
+_db.run(`CREATE TABLE IF NOT EXISTS daily_summaries(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+summary TEXT,
+timestamp TEXT DEFAULT(datetime('now'))
+)`);
 persist();
 return _db;
 }

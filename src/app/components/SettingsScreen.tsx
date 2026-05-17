@@ -220,7 +220,7 @@ function ProfileSection() {
             </button>
           </div>
           <div>
-            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 20, fontWeight: 500, color: c.text }}>Rahim Uddin</div>
+            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 20, fontWeight: 500, color: c.text }}>Adnan</div>
             <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.secondary }}>Age 62 · Male · Blood Type B+</div>
             <div className="flex items-center gap-2 mt-1.5">
               <span style={{ padding: "2px 10px", borderRadius: 10, background: `${c.amber}15`, color: c.amber, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Watch tier</span>
@@ -234,7 +234,7 @@ function ProfileSection() {
         {editing && (
           <div className="mt-4 pt-4 flex flex-col gap-3" style={{ borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: c.divider }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[{ l: "First Name", v: "Rahim" }, { l: "Last Name", v: "Uddin" }, { l: "Date of Birth", v: "15/03/1964" }, { l: "Blood Type", v: "B+" }].map(f => (
+              {[{ l: "First Name", v: "Adnan" }, { l: "Last Name", v: "Uddin" }, { l: "Date of Birth", v: "15/03/1964" }, { l: "Blood Type", v: "B+" }].map(f => (
                 <div key={f.l}>
                   <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 3 }}>{f.l}</label>
                   <input defaultValue={f.v} style={{
@@ -302,7 +302,7 @@ function ProfileSection() {
           <div className="mt-3 p-3 rounded-lg flex items-center gap-3" style={{ background: c.cardElevated }}>
             <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}>FK</div>
             <div>
-              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text }}>Fatema Khatun</div>
+              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text }}>Rehnuma</div>
               <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>Daughter · Active caregiver</div>
             </div>
             <TextLink label="Change" color={c.red} />
@@ -994,7 +994,7 @@ function PrivacySection() {
   const [appLock, setAppLock] = useState(false);
 
   const sessions = [
-    { device: "Rahim's Galaxy S24", last: "Active now", current: true },
+    { device: "Adnan's Galaxy S24", last: "Active now", current: true },
     { device: "Fatema's iPhone 15", last: "2 hours ago", current: false },
     { device: "Chrome — Desktop", last: "Yesterday", current: false },
   ];
@@ -1113,9 +1113,9 @@ function EmergencySection() {
             </p>
             <div className="flex flex-col gap-1.5 mb-3">
               {[
-                { who: "Fatema Khatun", method: "Push + SMS + Call", time: "0s" },
-                { who: "Rifat Ahmed", method: "Push + SMS", time: "5s" },
-                { who: "Karim Uddin", method: "Push + SMS", time: "10s" },
+                { who: "Rehnuma", method: "Push + SMS + Call", time: "0s" },
+                { who: "Rumi", method: "Push + SMS", time: "5s" },
+                { who: "Jabed", method: "Push + SMS", time: "10s" },
                 { who: "Dhaka Ambulance (999)", method: "API dispatch", time: "60s" },
               ].map(r => (
                 <div key={r.who} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: c.d ? "#0D0F1A" : "#F0F2F8" }}>
@@ -1135,9 +1135,9 @@ function EmergencySection() {
       {/* Emergency Contacts Summary */}
       <SectionCard title="Emergency Contacts" icon={<Phone size={18} />} iconColor={c.red}>
         {[
-          { name: "Fatema Khatun", role: "Daughter · Primary", pri: 1 },
-          { name: "Rifat Ahmed", role: "Son", pri: 2 },
-          { name: "Karim Uddin", role: "Spouse", pri: 3 },
+          { name: "Rehnuma", role: "Daughter · Primary", pri: 1 },
+          { name: "Rumi", role: "Son", pri: 2 },
+          { name: "Jabed", role: "Spouse", pri: 3 },
         ].map(m => (
           <div key={m.name} className="flex items-center gap-3 py-2.5" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: c.divider }}>
             <span className="flex items-center justify-center flex-shrink-0" style={{
