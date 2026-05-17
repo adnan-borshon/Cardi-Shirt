@@ -1,17 +1,17 @@
 import {Sparkles,ArrowRight,Loader2} from "lucide-react";
 import {useTokens} from "./ThemeContext";
-import {useECGRecords} from "./useBackend";
+import {useDailySummaries} from "./useBackend";
 
-const FALLBACK_SUMMARY="This afternoon your heart has been steady and calm. Your resting heart rate has stayed within your personal normal range, and your HRV is trending upward — a sign that your body is recovering well. Your breathing rate is steady at 16 breaths per minute, your stress index shows low stress (24/100), and all ECG markers including ST segments, T waves, and R-peak intervals are within normal ranges. No anomalies have been detected today.";
+const FALLBACK_SUMMARY="Gathering enough data to generate your first AI summary. Please wait until the next summary cycle (08:00 or 20:00).";
 
 export function AISummaryCard(){
 const tk=useTokens();
-const{records,loading}=useECGRecords();
+const{summaries,loading}=useDailySummaries();
 
-const latest=records.length>0?records[0]:null;
-const summary=latest&&latest.ai_summary?latest.ai_summary:FALLBACK_SUMMARY;
-const time=latest?new Date(latest.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"3:42 PM";
-const isLive=!!latest?.ai_summary;
+const latest=summaries.length>0?summaries[0]:null;
+const summary=latest&&latest.summary?latest.summary:FALLBACK_SUMMARY;
+const time=latest?new Date(latest.created_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"Waiting for data...";
+const isLive=!!latest?.summary;
 
 return(
 <div

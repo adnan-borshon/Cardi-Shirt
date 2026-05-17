@@ -22,8 +22,8 @@ const io=new Server(server,{cors:{origin:"*",methods:["GET","POST"]}});
 let geminiModel=null;
 if(process.env.GEMINI_API_KEY){
 const genAI=new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-geminiModel=genAI.getGenerativeModel({model:"gemini-1.5-flash"});
-console.log("[AI] Gemini 1.5 Flash model ready");
+geminiModel=genAI.getGenerativeModel({model:"gemini-2.5-flash"});
+console.log("[AI] Gemini 2.5 Flash model ready");
 }else{
 console.log("[AI] No Gemini API key — AI summaries will use fallback text");
 }
@@ -139,6 +139,20 @@ console.log(`[WS] Client connected: ${socket.id}`);
 socket.on("disconnect",()=>console.log(`[WS] Client disconnected: ${socket.id}`));
 });
 
+// ---------- Phase 3: GET Daily Summaries ----------
+app.get("/api/daily-summaries",async(_req,res)=>{
+try{
+const db=await getDb();
+const rows=db.exec("SELECT id,summary,created_at FROM daily_summaries ORDER BY id DESC");
+if(!rows.length||!rows[0].values.length)return res.json([]);
+const summaries=rows[0].values.map(r=>({id:r[0],summary:r[1],created_at:r[2]}));
+res.json(summaries);
+}catch(err){
+console.error("[SUMMARY] Fetch error:",err.message);
+res.status(500).json({error:err.message});
+}
+});
+
 // ---------- Phase 3: Scheduled Trigger (Twice Daily Summaries) ----------
 cron.schedule("0 8,20 * * *",async()=>{
 try{
@@ -173,7 +187,7 @@ const rows=db.exec("SELECT bpm,temp,fall_detected FROM realtime_vitals ORDER BY 
 const recentVitals=rows.length&&rows[0].values.length?rows[0].values:"No recent vitals.";
 let reply="Chatbot unavailable.";
 if(geminiModel){
-const prompt=`You are CardiShirt AI. The user says: "${userMessage}". Recent vitals (bpm, temp, fall_detected): ${JSON.stringify(recentVitals)}. Answer concisely.`;
+const prompt=`You are CardiShirt AI, an empathetic and helpful health guide assistant. The user says: "${userMessage}". Recent vitals (bpm, temp, fall_detected): ${JSON.stringify(recentVitals)}. Provide helpful health guidance based on these vitals but always remind the user you are an AI, not a doctor. Answer concisely.`;
 const aiRes=await geminiModel.generateContent(prompt);
 reply=aiRes.response.text();
 }

@@ -89,4 +89,38 @@ return()=>{s.off("ecg_session");};
 return{records,loading,error,refetch:fetchRecords};
 }
 
+// Hook: fetch Daily Summaries from REST API
+export interface DailySummary{
+id:number;
+summary:string;
+created_at:string;
+}
+
+export function useDailySummaries(){
+const[summaries,setSummaries]=useState<DailySummary[]>([]);
+const[loading,setLoading]=useState(true);
+const[error,setError]=useState<string|null>(null);
+
+const fetchSummaries=useCallback(async()=>{
+setLoading(true);
+setError(null);
+try{
+const res=await fetch(`${API_URL}/api/daily-summaries`);
+if(!res.ok)throw new Error(`HTTP ${res.status}`);
+const data=await res.json();
+setSummaries(Array.isArray(data)?data:[]);
+}catch(err:any){
+console.error("[useDailySummaries]",err.message);
+setError(err.message||"Failed to fetch daily summaries");
+setSummaries([]);
+}finally{
+setLoading(false);
+}
+},[]);
+
+useEffect(()=>{fetchSummaries();},[fetchSummaries]);
+
+return{summaries,loading,error,refetch:fetchSummaries};
+}
+
 export{API_URL};

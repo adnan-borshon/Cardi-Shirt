@@ -10,6 +10,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid, PieChart, Pie, Cell
 } from "recharts";
 import { useTheme } from "./ThemeContext";
+import { useDailySummaries } from "./useBackend";
 
 // ── Colors ──
 function useColors() {
@@ -147,6 +148,7 @@ function MiniSparkline({ data, color, width = 80, height = 24 }: { data: number[
 // ── Main Component ──
 export function RiskTrendsScreen() {
   const c = useColors();
+  const { summaries, loading } = useDailySummaries();
   const [range, setRange] = useState<"7d" | "30d" | "90d" | "1y">("30d");
   const [chartType, setChartType] = useState<"area" | "bar">("area");
   const [expandedMetric, setExpandedMetric] = useState<number | null>(null);
@@ -329,7 +331,10 @@ export function RiskTrendsScreen() {
             {/* AI Trend Narrative Card */}
             <div style={{ ...bodyCard, padding: 24 }}>
               <p style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, lineHeight: 1.7, color: c.bodyText }}>
-                Over the past 30 days your heart health has followed a mildly upward trend. Your resting heart rate has come down by an average of 4 BPM compared to the previous month, and your HRV has been climbing steadily since the 15th. The one area worth watching is your afternoon rhythm — you've had five brief irregular episodes between 2 and 4pm this month, all mild and self-resolving.
+                {loading ? "Analyzing your long-term heart health trends..." : 
+                 (summaries.length > 0 && summaries[0].summary 
+                  ? summaries[0].summary 
+                  : "Gathering enough data to generate your first AI summary. Please wait until the next summary cycle (08:00 or 20:00).")}
               </p>
               <div className="flex items-center gap-3 mt-4 flex-wrap">
                 <div className="flex items-center gap-1.5">
