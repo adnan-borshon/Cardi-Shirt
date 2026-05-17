@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Pill, Check } from "lucide-react";
 import { useTokens } from "./ThemeContext";
 
@@ -11,7 +11,19 @@ const medications = [
 type Slot = "morning" | "noon" | "evening";
 
 export function MedicationLog() {
-  const [meds, setMeds] = useState(medications);
+  const [meds, setMeds] = useState(() => {
+    try {
+      const saved = localStorage.getItem("cardiShirt_meds");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return medications;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cardiShirt_meds", JSON.stringify(meds));
+  }, [meds]);
   const tk = useTokens();
 
   const toggle = (idx: number, slot: Slot) => {

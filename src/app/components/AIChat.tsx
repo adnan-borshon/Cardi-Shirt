@@ -30,21 +30,25 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing]);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
     if (!text.trim()) return;
     setMessages((prev) => [...prev, { id: Date.now(), from: "user", text, time: "Now" }]);
     setInput("");
     setTyping(true);
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        "Is my heart okay today?": "Yes, Adnan — your heart is doing well today. Your rhythm has been consistently normal sinus, your heart rate has stayed between 68–75 BPM, and your HRV is in a healthy range. Your AI Health Score is 87, which is 3 points better than yesterday.",
-        "How was my sleep last night?": "Based on your overnight ECG data, you had a restful night. Your heart rate dropped to a healthy 58 BPM during deep sleep, and no rhythm irregularities were detected. Your HRV was elevated during sleep, which is a positive sign of recovery.",
-        "What should I avoid today?": "Based on your recent patterns, I'd recommend avoiding strenuous exercise in the afternoon heat, as your heart rate tends to elevate more than usual between 2–4 PM. Stay hydrated and consider a gentle walk in the cooler evening hours instead.",
-      };
-      const aiText = responses[text] || "Your heart data looks normal right now. Your rhythm is regular and your heart rate is within your personal baseline. If you have specific concerns, I'd recommend discussing them with DR. Rohan at your next appointment.";
-      setTyping(false);
-      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: aiText, time: "Now", hasECG: text.toLowerCase().includes("heart") && Math.random() > 0.5 }]);
-    }, 1500);
+    
+    try {
+      const res = await fetch("http://localhost:4000/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userMessage: text })
+      });
+      const data = await res.json();
+      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: data.reply || "Sorry, I could not generate a response.", time: "Now", hasECG: text.toLowerCase().includes("heart") && Math.random() > 0.5 }]);
+    } catch (e) {
+      console.error(e);
+      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: "Connection error. Ensure the backend is running.", time: "Now" }]);
+    }
+    setTyping(false);
   };
 
   return (

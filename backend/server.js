@@ -5,6 +5,7 @@ const http=require("http");
 const {Server}=require("socket.io");
 const {getDb,persist}=require("./db");
 const {GoogleGenerativeAI}=require("@google/generative-ai");
+const cron=require("node-cron");
 const {calculateBPM,calculateSpO2}=require("./signalProcessing");
 
 let lastInsertTime=0;
@@ -19,7 +20,7 @@ const io=new Server(server,{cors:{origin:"*",methods:["GET","POST"]}});
 
 // ---------- Gemini AI setup ----------
 let geminiModel=null;
-if(process.env.GEMINI_API_KEY&&process.env.GEMINI_API_KEY!=="your_gemini_api_key_here"){
+if(process.env.GEMINI_API_KEY){
 const genAI=new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 geminiModel=genAI.getGenerativeModel({model:"gemini-1.5-flash"});
 console.log("[AI] Gemini 1.5 Flash model ready");
@@ -31,7 +32,7 @@ console.log("[AI] No Gemini API key — AI summaries will use fallback text");
 let twilioClient=null;
 const TWILIO_FROM=process.env.TWILIO_PHONE_FROM;
 const EMERGENCY_TO=process.env.EMERGENCY_PHONE_TO;
-if(process.env.TWILIO_ACCOUNT_SID&&process.env.TWILIO_ACCOUNT_SID!=="your_twilio_sid_here"){
+if(process.env.TWILIO_ACCOUNT_SID){
 twilioClient=require("twilio")(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN);
 console.log("[SOS] Twilio client ready");
 }else{
@@ -82,9 +83,9 @@ console.error("[SOS] SMS failed:",smsErr.message);
 io.emit("sos",{reason,bpm,temp,timestamp:ts});
 }
 
-// --- Phase 3: ECG AI Analysis ---
+// --- Phase 3: ECG AI Analysis (Anomaly Trigger) ---
 let aiSummary=null;
-if(ecg_array&&Array.isArray(ecg_array)&&ecg_array.length>0){
+if(isDangerous&&ecg_array&&Array.isArray(ecg_array)&&ecg_array.length>0){
 if(geminiModel){
 try{
 const snippet=ecg_array.slice(0,200);
@@ -136,6 +137,51 @@ res.status(500).json({error:err.message});
 io.on("connection",(socket)=>{
 console.log(`[WS] Client connected: ${socket.id}`);
 socket.on("disconnect",()=>console.log(`[WS] Client disconnected: ${socket.id}`));
+});
+
+// ---------- Phase 3: Scheduled Trigger (Twice Daily Summaries) ----------
+cron.schedule("0 8,20 * * *",async()=>{
+try{
+const db=await getDb();
+const rows=db.exec("SELECT bpm,temp,fall_detected FROM realtime_vitals WHERE timestamp >= datetime('now','-12 hours')");
+if(!rows.length||!rows[0].values.length)return;
+const data=rows[0].values;
+const avgBpm=Math.round(data.reduce((a,b)=>a+b[0],0)/data.length);
+const falls=data.filter(r=>r[2]===1).length;
+let summary="No data for summary.";
+if(geminiModel){
+const prompt=`You are a CardiShirt AI. Summarize the last 12 hours of vitals. Avg BPM: ${avgBpm}, Falls detected: ${falls}, Data points: ${data.length}. Keep it to 2 brief sentences.`;
+const res=await geminiModel.generateContent(prompt);
+summary=res.response.text();
+}else{
+summary=`12-hour summary: Avg BPM is ${avgBpm} with ${falls} falls.`;
+}
+db.run("INSERT INTO daily_summaries(summary)VALUES(?)",[summary]);
+persist();
+console.log("[CRON] Generated 12-hour summary");
+}catch(err){
+console.error("[CRON] Error:",err.message);
+}
+});
+
+// ---------- Phase 3: On-Demand Trigger (Chatbot) ----------
+app.post("/api/chat",async(req,res)=>{
+try{
+const{userMessage}=req.body;
+const db=await getDb();
+const rows=db.exec("SELECT bpm,temp,fall_detected FROM realtime_vitals ORDER BY id DESC LIMIT 5");
+const recentVitals=rows.length&&rows[0].values.length?rows[0].values:"No recent vitals.";
+let reply="Chatbot unavailable.";
+if(geminiModel){
+const prompt=`You are CardiShirt AI. The user says: "${userMessage}". Recent vitals (bpm, temp, fall_detected): ${JSON.stringify(recentVitals)}. Answer concisely.`;
+const aiRes=await geminiModel.generateContent(prompt);
+reply=aiRes.response.text();
+}
+res.json({reply});
+}catch(err){
+console.error("[CHAT] Error:",err.message);
+res.status(500).json({error:err.message});
+}
 });
 
 // ---------- Boot ----------

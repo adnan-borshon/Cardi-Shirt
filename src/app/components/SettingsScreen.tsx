@@ -12,6 +12,28 @@ import {
 } from "lucide-react";
 import { useTheme } from "./ThemeContext";
 
+function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: T) => T)) => void] {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.log(error);
+      return initialValue;
+    }
+  });
+  const setValue = (value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.log(error);
+    }
+  };
+  return [storedValue, setValue];
+}
+
 /* ════════════════════════════════════════════
    THEME
    ════════════════════════════════════════════ */
@@ -199,10 +221,10 @@ function CategoryNav({ active, onSelect }: { active: Category; onSelect: (c: Cat
 function ProfileSection() {
   const c = useColors();
   const [editing, setEditing] = useState(false);
-  const [caregiverOn, setCaregiverOn] = useState(true);
+  const [caregiverOn, setCaregiverOn] = useLocalStorage("cs_caregiver", true);
 
   const conditions = ["Hypertension", "Diabetes", "Previous cardiac event", "Pacemaker", "Other"];
-  const [checkedConditions, setCheckedConditions] = useState([true, false, true, false, false]);
+  const [checkedConditions, setCheckedConditions] = useLocalStorage("cs_conditions", [true, false, true, false, false]);
 
   return (
     <>
@@ -314,8 +336,8 @@ function ProfileSection() {
       <div className="mt-2 pt-5" style={{ borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: c.divider }}>
         <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 500, color: c.muted, marginBottom: 12, display: "block" }}>Danger Zone</span>
         <div className="flex items-center gap-6">
-          <TextLink label="Delete account" color={c.red} />
-          <TextLink label="Export all my data" color={c.blue} />
+          <TextLink label="Delete account" color={c.red} onClick={() => {if(window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) alert("Account deletion request submitted.");}} />
+          <TextLink label="Export all my data" color={c.blue} onClick={() => alert("Data export started. You will receive an email when it is ready.")} />
         </div>
       </div>
     </>
@@ -714,17 +736,17 @@ function ECGLiveStrip() {
    ════════════════════════════════════════════ */
 function AlertsSection() {
   const c = useColors();
-  const [highHR, setHighHR] = useState(120);
-  const [lowHR, setLowHR] = useState(45);
-  const [highDur, setHighDur] = useState("30s");
-  const [rhythmSens, setRhythmSens] = useState("Standard");
-  const [hrvOn, setHrvOn] = useState(false);
-  const [hrvDrop, setHrvDrop] = useState(25);
-  const [pushOn, setPushOn] = useState(true);
-  const [smsOn, setSmsOn] = useState(true);
-  const [familyOn, setFamilyOn] = useState(true);
-  const [quietOn, setQuietOn] = useState(false);
-  const [emergOverride, setEmergOverride] = useState(true);
+  const [highHR, setHighHR] = useLocalStorage("cs_highHR", 120);
+  const [lowHR, setLowHR] = useLocalStorage("cs_lowHR", 45);
+  const [highDur, setHighDur] = useLocalStorage("cs_highDur", "30s");
+  const [rhythmSens, setRhythmSens] = useLocalStorage("cs_rhythmSens", "Standard");
+  const [hrvOn, setHrvOn] = useLocalStorage("cs_hrvOn", false);
+  const [hrvDrop, setHrvDrop] = useLocalStorage("cs_hrvDrop", 25);
+  const [pushOn, setPushOn] = useLocalStorage("cs_pushOn", true);
+  const [smsOn, setSmsOn] = useLocalStorage("cs_smsOn", true);
+  const [familyOn, setFamilyOn] = useLocalStorage("cs_familyOn", true);
+  const [quietOn, setQuietOn] = useLocalStorage("cs_quietOn", false);
+  const [emergOverride, setEmergOverride] = useLocalStorage("cs_emergOverride", true);
 
   const ALERT_HIST = [
     { date: "3 Apr 2026", time: "2:14 PM", type: "High HR Alert", color: "#E8304A" },

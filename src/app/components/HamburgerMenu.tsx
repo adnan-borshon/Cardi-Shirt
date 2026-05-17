@@ -138,6 +138,23 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
                   {quickActions.map((a) => (
                     <button
                       key={a.label}
+                      onClick={() => {
+                        if (a.label === "Call ambulance") {
+                          if (window.confirm("Are you sure you want to call an ambulance? This will initiate an emergency dispatch.")) {
+                            alert("Calling nearest ambulance...");
+                          }
+                        } else if (a.label === "Record ECG now") {
+                          alert("Recording a 30-second 3-lead ECG. Please remain still.");
+                        } else if (a.label === "Log a symptom") {
+                          alert("Opening symptom logger...");
+                        } else if (a.label === "Share with doctor") {
+                          alert("Your recent data link has been copied to your clipboard.");
+                        } else if (a.label === "Check family") {
+                          handleNav("/family");
+                        } else if (a.label === "Test shirt") {
+                          handleNav("/settings");
+                        }
+                      }}
                       className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-colors"
                       style={{
                         background: a.highlight ? "rgba(232,48,74,0.12)" : tk.chipBg,

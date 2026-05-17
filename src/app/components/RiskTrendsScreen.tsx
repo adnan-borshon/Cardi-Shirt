@@ -214,7 +214,10 @@ export function RiskTrendsScreen() {
                   <div className="absolute right-0 top-0 h-full rounded-full" style={{ width: `${Math.min(100, 50 + Math.abs(f.contribution) * 5)}%`, background: f.color }} />
                 )}
                 {f.status === "neutral" && (
-                  <div className="absolute left-0 top-0 h-full rounded-full" style={{ width: "50%", background: f.color }} />
+                  <button onClick={() => alert("Report link copied to clipboard!")} className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg w-full transition-colors" style={{ background: c.blue, color: "#fff" }}>
+                <Share2 size={16} />
+                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500 }}>Share trend report</span>
+              </button>
                 )}
               </div>
               <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.rightSecondary }}>{f.desc}</span>
@@ -336,7 +339,7 @@ export function RiskTrendsScreen() {
                     {[1, 2, 3, 4, 5].map(i => <div key={`conf-${i}`} className="w-1 h-1 rounded-full" style={{ background: i <= 4 ? c.red : c.cardBorder }} />)}
                   </div>
                 </div>
-                <button className="flex items-center gap-1 ml-auto" style={{ color: c.red, fontFamily: "Syne, sans-serif", fontSize: 12 }}>
+                <button onClick={() => alert("Report link copied to clipboard!")} className="flex items-center gap-1 ml-auto" style={{ color: c.red, fontFamily: "Syne, sans-serif", fontSize: 12 }}>
                   <Share2 size={12} /> Share with doctor
                 </button>
               </div>
