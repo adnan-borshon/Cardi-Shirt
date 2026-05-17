@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Search, Filter, Share2, Download, FileText, MessageSquare, Play, Pause,
   ZoomIn, ZoomOut, ToggleLeft, ToggleRight, ChevronRight, Heart, Activity,
-  Clock, Sparkles, Copy, X
+  Clock, Sparkles, Copy, X, Loader2
 } from "lucide-react";
 import { useTokens } from "./ThemeContext";
+import { useECGRecords } from "./useBackend";
 
 // --- Mock Data ---
 type SessionType = "continuous" | "manual" | "alert" | "doctor";
@@ -55,6 +56,35 @@ const detectedEvents = [
 
 export function ECGRecordsScreen() {
   const tk = useTokens();
+  const {records:backendRecords,loading:backendLoading}=useECGRecords();
+
+  // Merge backend records into session list
+  const backendSessions:Session[]=useMemo(()=>backendRecords.map((r,i)=>{
+    const d=new Date(r.timestamp);
+    const dateStr=d.toLocaleDateString("en-US",{day:"numeric",month:"short",year:"numeric"});
+    const timeStr=d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    const wf=r.waveform_data||[];
+    const vals=wf.filter(v=>typeof v==="number");
+    const minV=vals.length?Math.min(...vals):0;
+    const maxV=vals.length?Math.max(...vals):0;
+    return{
+      id:`backend-${r.id}`,
+      dateGroup:"From Device",
+      date:dateStr,
+      time:timeStr,
+      type:"manual" as SessionType,
+      duration:`${wf.length} samples`,
+      hrRange:`${minV.toFixed(1)}–${maxV.toFixed(1)} mV`,
+      aiStatus:(r.ai_summary&&!r.ai_summary.includes("unavailable")?"normal":"anomaly") as Session["aiStatus"],
+      aiStatusText:r.ai_summary&&!r.ai_summary.includes("unavailable")?"AI analyzed":"Pending",
+      shared:false,
+      _backendId:r.id,
+      _aiSummary:r.ai_summary||"",
+      _waveform:wf,
+    };
+  }),[backendRecords]) as any[];
+
+  const allSessions=useMemo(()=>[...backendSessions,...sessions],[backendSessions]);
   const [selectedSession, setSelectedSession] = useState(sessions[0]);
   const [activeFilter, setActiveFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,7 +181,7 @@ export function ECGRecordsScreen() {
     return () => cancelAnimationFrame(animRef.current);
   }, [drawLeadECG, playing, speed]);
 
-  const grouped = sessions.reduce<Record<string, Session[]>>((acc, s) => {
+  const grouped = allSessions.reduce<Record<string, Session[]>>((acc, s) => {
     if (!acc[s.dateGroup]) acc[s.dateGroup] = [];
     acc[s.dateGroup].push(s);
     return acc;
@@ -288,7 +318,7 @@ export function ECGRecordsScreen() {
               <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>AI Analysis</span>
             </div>
             <p style={{ color: tk.textPrimary, fontFamily: "'DM Serif Display', serif", fontSize: 14, lineHeight: 1.65 }}>
-              This recording was made on {selectedSession.date}. Your heart showed a normal sinus rhythm for most of the session, with one brief irregular period at the 12-minute mark that resolved on its own. Overall, your cardiac pattern remains within your established baseline.
+              {(selectedSession as any)._aiSummary || `This recording was made on ${selectedSession.date}. Your heart showed a normal sinus rhythm for most of the session, with one brief irregular period at the 12-minute mark that resolved on its own. Overall, your cardiac pattern remains within your established baseline.`}
             </p>
 
             {/* Key Metrics */}

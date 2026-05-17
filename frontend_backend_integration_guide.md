@@ -113,10 +113,3 @@ Manages secondary users (caregivers/family) and automated emergency responses.
 
 
 
-## 4. Key Considerations for Backend Development
-
-1. **High-Frequency Data Storage:** ECG waveform data is dense. Consider using time-series databases (e.g., InfluxDB, TimescaleDB) or blob storage for continuous waveform streams, keeping metadata in a relational database (PostgreSQL).
-2. **AI Integration:** The UI relies heavily on text-based AI summaries (e.g., `AISummaryCard`, daily narratives, risk explanations). The backend will need integration with an LLM to generate these insights based on the raw metrics.
-3. **Localization (i18n):** Since the frontend supports English and Bengali natively, backend messages (like SMS alerts, push notifications, and AI summaries) must support localization or return structured data so the frontend can handle translations.
-4. **Permissions & Security:** Granular access control is required. A family member might have access to the Dashboard but not ECG Records. API endpoints must strictly validate JWTs against the user's defined `permissions` object.
-5. **Real-time Engine:** A WebSocket server (e.g., Socket.io or native WebSockets) is critical for the "Live Status" monitoring and "Emergency Tracking" features, ensuring caregivers see updates instantly.
