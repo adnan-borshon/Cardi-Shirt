@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Flame, Trophy,
   Heart, Shirt, User, Sparkles, Globe, Edit3, Pill, AlertTriangle,
@@ -45,24 +45,13 @@ function generateMonthData(year: number, month: number): DayData[] {
   return data;
 }
 
-const hrData = Array.from({ length: 24 }, (_, h) => ({
-  hour: `${h.toString().padStart(2, "0")}:00`,
-  hr: h < 6 ? 54 + Math.random() * 8 : h < 9 ? 62 + Math.random() * 12 : h < 17 ? 70 + Math.random() * 15 : h < 21 ? 68 + Math.random() * 10 : 58 + Math.random() * 8,
-  worn: !(h >= 0 && h <= 3),
-}));
+const hrData:any[]=[];
 
 function getEvents(L: typeof t["en"]) {
   return [
     { time: "7:14 AM", icon: Shirt, color: "#9AA0B8", text: L.evtShirtConnected, action: L.evtViewDetails, type: "device" as const },
     { time: "8:30 AM", icon: User, color: "#5B8AF0", text: L.evtCheckin, action: L.evtEditNote, type: "patient" as const },
     { time: "9:00 AM", icon: Pill, color: "#5B8AF0", text: L.evtMedLogged, action: L.evtEditNote, type: "patient" as const },
-    { time: "11:45 AM", icon: Wind, color: "#27C28A", text: L.evtBreathingNormal, action: L.evtView, type: "cardiac" as const },
-    { time: "1:30 PM", icon: Gauge, color: "#F5A623", text: L.evtStrainElevated, action: L.evtView, type: "cardiac" as const },
-    { time: "2:15 PM", icon: Heart, color: "#E8304A", text: L.evtIrregular, action: L.evtViewECG, type: "cardiac" as const },
-    { time: "2:18 PM", icon: TrendingDown, color: "#E8304A", text: L.evtTWaveInversion, action: L.evtViewECG, type: "cardiac" as const },
-    { time: "2:22 PM", icon: TrendingUp, color: "#E8304A", text: L.evtSTDeviation, action: L.evtViewECG, type: "cardiac" as const },
-    { time: "3:15 PM", icon: Brain, color: "#27C28A", text: L.evtStressLow, action: L.evtView, type: "cardiac" as const },
-    { time: "3:42 PM", icon: Sparkles, color: "#F5A623", text: L.evtAISummary, action: L.evtView, type: "cardiac" as const },
     { time: "6:00 PM", icon: User, color: "#5B8AF0", text: L.evtFatigue, action: L.evtEditNote, type: "patient" as const },
   ];
 }
@@ -197,6 +186,16 @@ export function CardiacDiaryScreen() {
   const [noteText, setNoteText] = useState("");
   const [showDeviceEvents, setShowDeviceEvents] = useState(false);
   const [hrvExplainOpen, setHrvExplainOpen] = useState(false);
+
+  useEffect(()=>{
+    const saved=localStorage.getItem(`cardiShirt_note_${currentYear}_${currentMonth}_${selectedDay}`);
+    setNoteText(saved||"");
+  },[selectedDay,currentMonth,currentYear]);
+
+  const handleSaveNote=()=>{
+    localStorage.setItem(`cardiShirt_note_${currentYear}_${currentMonth}_${selectedDay}`,noteText);
+    alert("Note saved successfully!");
+  };
 
   // Medication Log state
   type MedSlot = "morning" | "noon" | "evening";
@@ -531,43 +530,7 @@ export function CardiacDiaryScreen() {
               </div>
             )}
 
-            {/* HRV Summary Row */}
-            {selected.wearing !== "none" && (
-              <div className="grid grid-cols-2 gap-4">
-                {/* RMSSD */}
-                <div className="rounded-xl p-5" style={{ background: c.cardBg, boxShadow: c.shadow, border: `1px solid ${c.borderColor}` }}>
-                  <span style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 11 }}>{L.rmssd}</span>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span style={{ color: c.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 32 }}>{bn ? toBengaliNum(44) : 44}</span>
-                    <span style={{ color: c.textMuted, fontFamily: "DM Mono, monospace", fontSize: 13 }}>ms</span>
-                  </div>
-                  <span style={{ color: "#27C28A", fontFamily: "Syne, sans-serif", fontSize: 12, marginTop: 6, display: "block" }}>{bn ? `${toBengaliNum(6)}ms ${L.aboveAvg}` : `6ms ${L.aboveAvg}`}</span>
-                  <span style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 11, marginTop: 2, display: "block" }}>{L.goodVariability}</span>
-                </div>
-                {/* Poincaré Plot */}
-                <div className="rounded-xl p-5" style={{ background: c.cardBg, boxShadow: c.shadow, border: `1px solid ${c.borderColor}` }}>
-                  <span style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 11 }}>{L.poincare}</span>
-                  <svg width="100%" height="80" viewBox="0 0 120 80" className="mt-2">
-                    <line x1="10" y1="70" x2="110" y2="70" stroke={c.poincareAxis} strokeWidth="0.5" />
-                    <line x1="10" y1="70" x2="10" y2="5" stroke={c.poincareAxis} strokeWidth="0.5" />
-                    <line x1="10" y1="70" x2="110" y2="10" stroke={c.poincareAxis} strokeWidth="0.5" strokeDasharray="4 2" />
-                    {Array.from({ length: 60 }).map((_, i) => {
-                      const cx = 30 + Math.sin(i * 0.4) * 15 + (i % 7) * 3;
-                      const cy = 50 - Math.cos(i * 0.3) * 12 - (i % 5) * 2;
-                      return <circle key={i} cx={cx} cy={cy} r={1.5} fill={c.poincareDot} />;
-                    })}
-                  </svg>
-                  <button onClick={() => setHrvExplainOpen(!hrvExplainOpen)} style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 12 }}>
-                    {L.whatMean}
-                  </button>
-                  {hrvExplainOpen && (
-                    <p style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 11, lineHeight: 1.5, marginTop: 8 }}>
-                      {L.poincareExplain}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
+
 
             {/* Events Timeline */}
             {selected.wearing !== "none" && (
@@ -775,7 +738,7 @@ export function CardiacDiaryScreen() {
                     style={{ background: c.inputBg, color: c.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 13, border: `1px solid ${c.borderColor}` }}
                   />
                   {noteText && (
-                    <button className="px-4 py-1.5 rounded-lg" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12 }}>{L.saveNote}</button>
+                    <button onClick={handleSaveNote} className="px-4 py-1.5 rounded-lg active:scale-95 transition-all" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12 }}>{L.saveNote}</button>
                   )}
                 </div>
               )}

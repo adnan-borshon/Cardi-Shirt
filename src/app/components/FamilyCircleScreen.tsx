@@ -253,19 +253,27 @@ function SwipeToConfirm({ onConfirm }: { onConfirm: () => void }) {
 
 /* ═══════════════ FAMILY MEMBER CARD ═══════════════ */
 function MemberCard({
-  member, onEditPerms, editOpen, onRemove,
+  member, onEditPerms, editOpen, onRemove, onSave,
 }: {
   member: Member;
   onEditPerms: (id: string | null) => void;
   editOpen: boolean;
   onRemove: (id: string) => void;
+  onSave: (id: string, updatedFields: Partial<Member>) => void;
 }) {
   const c = useColors();
   const [perms, setPerms] = useState(member.permissions);
   const [notif, setNotif] = useState(member.notifLevel);
+  const [isEmergency, setIsEmergency] = useState(member.isEmergencyContact);
   const [showMenu, setShowMenu] = useState(false);
   const isPending = member.status === "pending";
   const isInactive = member.status === "inactive";
+
+  const handleSave = () => {
+    onSave(member.id, { permissions: perms, notifLevel: notif, isEmergencyContact: isEmergency });
+    onEditPerms(null);
+    alert("Permissions updated successfully!");
+  };
 
   const notifLabel = notif === "all" ? "All alerts" : notif === "critical" ? "Critical only" : notif === "daily" ? "Daily summary" : "Off";
   const notifColor = notif === "all" ? c.green : notif === "critical" ? c.amber : c.gray;
@@ -425,14 +433,14 @@ function MemberCard({
                 <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>Will be called during automatic dispatch</div>
               </div>
             </div>
-            <Toggle on={member.isEmergencyContact} onToggle={() => {}} />
+            <Toggle on={isEmergency} onToggle={() => setIsEmergency(!isEmergency)} />
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => onEditPerms(null)} className="px-5 py-2 rounded-lg" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
+            <button onClick={handleSave} className="px-5 py-2 rounded-lg active:scale-95 transition-all font-semibold" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
               Save changes
             </button>
-            <button onClick={() => onEditPerms(null)} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Cancel</button>
+            <button onClick={() => { setPerms(member.permissions); setNotif(member.notifLevel); setIsEmergency(member.isEmergencyContact); onEditPerms(null); }} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Cancel</button>
           </div>
         </div>
       )}
@@ -442,15 +450,50 @@ function MemberCard({
 }
 
 /* ═══════════════ ADD MEMBER MODAL ═══════════════ */
-function AddMemberModal({ onClose }: { onClose: () => void }) {
+function AddMemberModal({ onClose, onAdd }: { onClose: () => void; onAdd: (m: Member) => void }) {
   const c = useColors();
   const [rel, setRel] = useState("Child");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [permEcg, setPermEcg] = useState(true);
+  const [permDiary, setPermDiary] = useState(true);
+  const [permAlerts, setPermAlerts] = useState(true);
+  const [isEmerg, setIsEmerg] = useState(false);
   const rels = ["Spouse", "Parent", "Child", "Sibling", "Caregiver", "Other"];
 
   const iStyle: React.CSSProperties = {
     background: c.inputBg, border: `1px solid ${c.inputBorder}`, borderRadius: 8,
     padding: "10px 14px", fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text,
     width: "100%", outline: "none",
+  };
+
+  const handleSend = () => {
+    if(!name || !phone){
+      alert("Please fill in the member's name and phone number.");
+      return;
+    }
+    const initials = name.split(" ").map(w=>w[0]).join("").toUpperCase().substring(0, 2) || "FC";
+    const colors = ["#E8304A", "#5B8AF0", "#27C28A", "#F5A623", "#8890B8"];
+    const avatarColor = colors[Math.floor(Math.random() * colors.length)];
+    const newMember: Member = {
+      id: "m_" + Date.now(),
+      name,
+      initials,
+      relationship: rel,
+      phone,
+      email,
+      avatarColor,
+      status: "pending",
+      lastActivity: "Invitation sent — awaiting acceptance",
+      notifLevel: permAlerts ? "all" : "off",
+      isEmergencyContact: isEmerg,
+      emergencyPriority: isEmerg ? 4 : 0,
+      permissions: { ecg: permEcg, diary: permDiary, alerts: permAlerts, dashboard: true }
+    };
+    onAdd(newMember);
+    onClose();
+    alert(`Invitation sent to ${name} successfully!`);
   };
 
   return (
@@ -472,7 +515,7 @@ function AddMemberModal({ onClose }: { onClose: () => void }) {
         <div className="p-6 flex flex-col gap-4">
           <div>
             <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 4 }}>Full Name</label>
-            <input placeholder="e.g. Rehnuma" style={iStyle} />
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Rehnuma" style={iStyle} />
           </div>
           <div>
             <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 4 }}>Relationship</label>
@@ -482,29 +525,39 @@ function AddMemberModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 4 }}>Phone Number</label>
-            <input placeholder="+880 1XXX-XXXXXX" style={iStyle} />
+            <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+880 1XXX-XXXXXX" style={iStyle} />
             <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.muted, marginTop: 2, display: "block" }}>
               They'll receive an SMS invitation with a secure link to join your circle
             </span>
           </div>
           <div>
             <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 4 }}>Email (optional)</label>
-            <input placeholder="email@example.com" style={iStyle} />
+            <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="email@example.com" style={iStyle} />
           </div>
 
           <SectionDivider label="Initial Permissions" />
 
           <div className="flex flex-col gap-2.5">
-            {["Can see ECG data", "Can see Cardiac Diary", "Receives alert notifications", "Is an emergency contact"].map((p, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>{p}</span>
-                <Toggle on={i < 3} onToggle={() => {}} />
-              </div>
-            ))}
+            <div className="flex items-center justify-between">
+              <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>Can see ECG data</span>
+              <Toggle on={permEcg} onToggle={() => setPermEcg(!permEcg)} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>Can see Cardiac Diary</span>
+              <Toggle on={permDiary} onToggle={() => setPermDiary(!permDiary)} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>Receives alert notifications</span>
+              <Toggle on={permAlerts} onToggle={() => setPermAlerts(!permAlerts)} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>Is an emergency contact</span>
+              <Toggle on={isEmerg} onToggle={() => setIsEmerg(!isEmerg)} />
+            </div>
           </div>
         </div>
         <div className="px-6 py-4 flex items-center gap-3" style={{ borderTop: `1px solid ${c.cardBorder}` }}>
-          <button className="px-5 py-2.5 rounded-lg flex items-center gap-2" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}>
+          <button onClick={handleSend} className="px-5 py-2.5 rounded-lg flex items-center gap-2 active:scale-95 transition-all font-semibold" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}>
             <Send size={14} /> Send Invitation
           </button>
           <button onClick={onClose} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Cancel</button>
@@ -867,7 +920,23 @@ function LiveStatusPanel({ members }: { members: Member[] }) {
 /* ═══════════════ MAIN SCREEN ═══════════════ */
 export function FamilyCircleScreen() {
   const c = useColors();
-  const [members, setMembers] = useState(MEMBERS_INIT);
+  const [members, setMembers] = useState<Member[]>(() => {
+    try {
+      const saved = localStorage.getItem("cs_family_members");
+      return saved ? JSON.parse(saved) : MEMBERS_INIT;
+    } catch {
+      return MEMBERS_INIT;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cs_family_members", JSON.stringify(members));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [members]);
+
   const [editingPerms, setEditingPerms] = useState<string | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
   const [tabletTab, setTabletTab] = useState<"family" | "status">("family");
@@ -888,7 +957,14 @@ export function FamilyCircleScreen() {
   }, [countdownPreview, previewSec, responseWindow]);
 
   const removeMember = (id: string) => {
-    setMembers(ms => ms.filter(m => m.id !== id));
+    if(confirm("Are you sure you want to remove this family member from your circle?")) {
+      setMembers(ms => ms.filter(m => m.id !== id));
+      alert("Family member removed successfully.");
+    }
+  };
+
+  const handleSaveMemberPerms = (id: string, updatedFields: Partial<Member>) => {
+    setMembers(ms => ms.map(m => m.id === id ? { ...m, ...updatedFields } : m));
   };
 
   const emergencyMembers = members.filter(m => m.isEmergencyContact && m.status !== "pending").sort((a, b) => a.emergencyPriority - b.emergencyPriority);
@@ -944,6 +1020,7 @@ export function FamilyCircleScreen() {
                   editOpen={editingPerms === m.id}
                   onEditPerms={setEditingPerms}
                   onRemove={removeMember}
+                  onSave={handleSaveMemberPerms}
                 />
               ))}
             </div>
@@ -1230,7 +1307,7 @@ export function FamilyCircleScreen() {
       </div>
 
       {/* Modals */}
-      {showAddMember && <AddMemberModal onClose={() => setShowAddMember(false)} />}
+      {showAddMember && <AddMemberModal onClose={() => setShowAddMember(false)} onAdd={(newMember) => setMembers(ms => [...ms, newMember])} />}
       {showAlertSim && <AlertSimulationModal countdownTotal={responseWindow} onClose={() => setShowAlertSim(false)} />}
     </div>
   );

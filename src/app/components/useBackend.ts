@@ -15,6 +15,7 @@ export interface LiveVitals{
 bpm:number;
 temp:number;
 fall_detected:boolean;
+ecg_array?:number[];
 timestamp:string;
 }
 

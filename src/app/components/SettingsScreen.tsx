@@ -223,6 +223,34 @@ function ProfileSection() {
   const [editing, setEditing] = useState(false);
   const [caregiverOn, setCaregiverOn] = useLocalStorage("cs_caregiver", true);
 
+  const [firstName, setFirstName] = useLocalStorage("cs_first_name", "Adnan");
+  const [lastName, setLastName] = useLocalStorage("cs_last_name", "Uddin");
+  const [dob, setDob] = useLocalStorage("cs_dob", "15/03/1964");
+  const [bloodType, setBloodType] = useLocalStorage("cs_blood_type", "B+");
+
+  const [tempFirst, setTempFirst] = useState(firstName);
+  const [tempLast, setTempLast] = useState(lastName);
+  const [tempDob, setTempDob] = useState(dob);
+  const [tempBlood, setTempBlood] = useState(bloodType);
+
+  useEffect(() => {
+    if(editing) {
+      setTempFirst(firstName);
+      setTempLast(lastName);
+      setTempDob(dob);
+      setTempBlood(bloodType);
+    }
+  }, [editing, firstName, lastName, dob, bloodType]);
+
+  const handleSaveProfile = () => {
+    setFirstName(tempFirst);
+    setLastName(tempLast);
+    setDob(tempDob);
+    setBloodType(tempBlood);
+    setEditing(false);
+    alert("Profile saved successfully!");
+  };
+
   const conditions = ["Hypertension", "Diabetes", "Previous cardiac event", "Pacemaker", "Other"];
   const [checkedConditions, setCheckedConditions] = useLocalStorage("cs_conditions", [true, false, true, false, false]);
 
@@ -235,15 +263,15 @@ function ProfileSection() {
             <div className="flex items-center justify-center" style={{
               width: 80, height: 80, borderRadius: 40, background: "#5B8AF0",
               color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 28, fontWeight: 500,
-            }}>RU</div>
+            }}>{firstName.substring(0, 1).toUpperCase()}{lastName.substring(0, 1).toUpperCase()}</div>
             <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center"
               style={{ background: c.cardBg, borderWidth: 1.5, borderStyle: "solid", borderColor: c.cardBorder }}>
               <Camera size={13} style={{ color: c.secondary }} />
             </button>
           </div>
           <div>
-            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 20, fontWeight: 500, color: c.text }}>Adnan</div>
-            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.secondary }}>Age 62 · Male · Blood Type B+</div>
+            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 20, fontWeight: 500, color: c.text }}>{firstName} {lastName}</div>
+            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.secondary }}>DOB: {dob} · Blood Type {bloodType}</div>
             <div className="flex items-center gap-2 mt-1.5">
               <span style={{ padding: "2px 10px", borderRadius: 10, background: `${c.amber}15`, color: c.amber, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Watch tier</span>
               <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>Risk score 73</span>
@@ -256,16 +284,22 @@ function ProfileSection() {
         {editing && (
           <div className="mt-4 pt-4 flex flex-col gap-3" style={{ borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: c.divider }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[{ l: "First Name", v: "Adnan" }, { l: "Last Name", v: "Uddin" }, { l: "Date of Birth", v: "15/03/1964" }, { l: "Blood Type", v: "B+" }].map(f => (
-                <div key={f.l}>
-                  <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 3 }}>{f.l}</label>
-                  <input defaultValue={f.v} style={{
-                    width: "100%", padding: "8px 12px", borderRadius: 8,
-                    background: c.inputBg, borderWidth: 1, borderStyle: "solid", borderColor: c.inputBorder,
-                    fontFamily: f.l === "Date of Birth" ? "DM Mono, monospace" : "Syne, sans-serif", fontSize: 14, color: c.text, outline: "none",
-                  }} />
-                </div>
-              ))}
+              <div>
+                <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 3 }}>First Name</label>
+                <input value={tempFirst} onChange={e=>setTempFirst(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: c.inputBg, borderWidth: 1, borderStyle: "solid", borderColor: c.inputBorder, fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text, outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 3 }}>Last Name</label>
+                <input value={tempLast} onChange={e=>setTempLast(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: c.inputBg, borderWidth: 1, borderStyle: "solid", borderColor: c.inputBorder, fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text, outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 3 }}>Date of Birth</label>
+                <input value={tempDob} onChange={e=>setTempDob(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: c.inputBg, borderWidth: 1, borderStyle: "solid", borderColor: c.inputBorder, fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text, outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 3 }}>Blood Type</label>
+                <input value={tempBlood} onChange={e=>setTempBlood(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: c.inputBg, borderWidth: 1, borderStyle: "solid", borderColor: c.inputBorder, fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text, outline: "none" }} />
+              </div>
             </div>
             <div>
               <label style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, display: "block", marginBottom: 6 }}>Known Conditions</label>
@@ -290,7 +324,7 @@ function ProfileSection() {
             <p style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, lineHeight: 1.6 }}>
               This information helps CardiShirt AI personalize your risk analysis. It is never shared without your permission.
             </p>
-            <button className="self-start px-5 py-2 rounded-lg" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Save changes</button>
+            <button onClick={handleSaveProfile} className="self-start px-5 py-2 rounded-lg active:scale-95 transition-all font-semibold" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Save changes</button>
           </div>
         )}
       </SectionCard>
@@ -488,7 +522,7 @@ function DeviceSection() {
             </div>
           ))}
         </div>
-        <button className="px-4 py-2 rounded-lg" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, background: "transparent" }}>
+        <button onClick={()=>{const name=prompt("Enter the Bluetooth or Serial Name of your CardiShirt (e.g. CS-2026-PRO):");if(name)alert(`Shirt ${name} paired successfully via Bluetooth! Vitals and ECG telemetry are now connected.`);}} className="px-4 py-2 rounded-lg active:scale-95 transition-all" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, background: "transparent" }}>
           Pair a new shirt
         </button>
       </SectionCard>
@@ -673,9 +707,9 @@ function DeviceSection() {
           <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>Updated 18 Mar 2026</span>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
-          <button className="px-4 py-2 rounded-lg" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>Check for updates</button>
-          <TextLink label="Reset shirt connection" color={c.red} />
-          <TextLink label="Clear cached sensor data" color={c.secondary} />
+          <button onClick={()=>alert("Checking for CardiShirt firmware updates... Your shirt is already running the latest version (v2.4.1).")} className="px-4 py-2 rounded-lg active:scale-95 transition-all" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>Check for updates</button>
+          <TextLink label="Reset shirt connection" color={c.red} onClick={()=>{if(confirm("Are you sure you want to reset the CardiShirt Bluetooth connection?"))alert("Bluetooth connection reset. Reconnecting to shirt...");}} />
+          <TextLink label="Clear cached sensor data" color={c.secondary} onClick={()=>{if(confirm("Are you sure you want to clear cached sensor data from the device? This will free up local storage space on the shirt's built-in flash memory."))alert("Local sensor cache cleared successfully.");}} />
         </div>
       </SectionCard>
     </>

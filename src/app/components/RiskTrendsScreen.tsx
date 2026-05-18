@@ -51,67 +51,7 @@ function useColors() {
 }
 
 // ── Mock Data ──
-const RISK_SCORE = 73;
-const RISK_TIER = "Watch";
-const RISK_COLOR = "#F5A623";
-const RISK_DELTA = "+4";
-const RISK_DELTA_COLOR = "#F5A623";
-
-const last7 = [69, 67, 70, 68, 71, 70, 73];
-const dayLabels = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
-
-function genData(range: string, type: "health" | "hr" | "hrv" | "rhythm") {
-  const n = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : 365;
-  return Array.from({ length: n }, (_, i) => {
-    const s = (i * 7 + 3) % 17;
-    const lbl = `${i}`;
-    if (type === "health") return { label: lbl, value: 60 + Math.sin(i * 0.12) * 15 + (s % 6), avg: 65 };
-    if (type === "hr") return { label: lbl, value: 68 + Math.sin(i * 0.3) * 6 + (s % 5) - 2 };
-    if (type === "hrv") return { label: lbl, value: 38 + Math.cos(i * 0.2) * 8 + (s % 4) };
-    return { label: lbl, value: 88 + Math.sin(i * 0.15) * 8 + (s % 3) };
-  });
-}
-
-// Event markers for the health score chart
-const eventMarkers = [
-  { day: 5, type: "alert", label: "Brief irregular rhythm", score: 58 },
-  { day: 12, type: "anomaly", label: "Elevated afternoon HR", score: 62 },
-  { day: 18, type: "doctor", label: "Record shared with DR. Rohan", score: 71 },
-  { day: 24, type: "symptom", label: "Patient logged fatigue", score: 66 },
-];
-
-const alertHistory = [
-  { date: "Mar 28, 2:14 PM", type: "alert", name: "Irregular rhythm episode", duration: "42 seconds, self-resolved", color: "#E8304A" },
-  { date: "Mar 28, 2:18 PM", type: "alert", name: "T wave inversion — Lead III", duration: "During irregular episode", color: "#E8304A" },
-  { date: "Mar 25, 3:47 PM", type: "alert", name: "Irregular rhythm episode", duration: "28 seconds, self-resolved", color: "#E8304A" },
-  { date: "Mar 22, 11:03 AM", type: "anomaly", name: "Elevated resting HR", duration: "32 minutes above baseline", color: "#F5A623" },
-  { date: "Mar 18, 2:31 PM", type: "anomaly", name: "Afternoon rhythm variation", duration: "Brief, within normal range", color: "#F5A623" },
-  { date: "Mar 14, 9:15 AM", type: "anomaly", name: "Morning HR spike", duration: "8 minutes, exercise-related", color: "#F5A623" },
-  { date: "Mar 12, 10:20 AM", type: "alert", name: "T wave inversion — Lead II", duration: "18 seconds, normalized", color: "#E8304A" },
-  { date: "Mar 10, 4:52 PM", type: "alert", name: "Irregular rhythm episode", duration: "55 seconds, self-resolved", color: "#E8304A" },
-  { date: "Mar 7, 1:20 PM", type: "anomaly", name: "HRV drop below baseline", duration: "Low sleep quality noted", color: "#F5A623" },
-  { date: "Mar 3, 3:10 PM", type: "alert", name: "Irregular rhythm episode", duration: "35 seconds, self-resolved", color: "#E8304A" },
-];
-
-const riskFactors = [
-  { name: "Resting Heart Rate", contribution: +6, color: "#27C28A", status: "positive", desc: "Your resting rate has been lower than usual this month.", sparkData: [72, 70, 69, 68, 70, 67, 68], detail: "Your average resting heart rate this month is 68 BPM, down from 72 BPM last month. Lower resting heart rate generally indicates improved cardiovascular fitness. This factor is contributing positively to your overall score." },
-  { name: "Heart Rate Variability", contribution: -4, color: "#E8304A", status: "negative", desc: "Your HRV dropped after the 18th and has not fully recovered.", sparkData: [44, 42, 40, 36, 34, 35, 37], detail: "Your RMSSD averaged 37ms this week, down from 44ms. HRV tends to decrease with poor sleep, high stress, or dehydration. Improving your sleep consistency may help recovery." },
-  { name: "Rhythm Stability", contribution: -3, color: "#F5A623", status: "negative", desc: "Five brief irregular episodes this month, all self-resolving.", sparkData: [96, 95, 94, 92, 93, 91, 93], detail: "Your rhythm has been 93% stable this month. The five irregular episodes were all brief and self-resolving, but the slight increase in frequency is worth monitoring." },
-  { name: "ST Segment Deviation", contribution: +4, color: "#27C28A", status: "positive", desc: "No significant ST elevation or depression detected this month.", sparkData: [0.1, 0.15, 0.2, 0.1, 0.15, 0.1, 0.2], detail: "ST segments have remained within normal range (0 to +0.3 mV). No signs of ischemia or myocardial injury detected. This is a strong positive indicator for cardiac health." },
-  { name: "T Wave Morphology", contribution: +3, color: "#27C28A", status: "positive", desc: "All T waves upright and normal throughout monitoring period.", sparkData: [100, 100, 100, 100, 100, 100, 100], detail: "No T wave inversions or abnormalities detected. T wave amplitude and duration remain consistent and within healthy parameters, indicating proper ventricular repolarization." },
-  { name: "R-Peak Consistency", contribution: +2, color: "#27C28A", status: "positive", desc: "R-R intervals show excellent regularity.", sparkData: [98, 97, 98, 99, 98, 97, 98], detail: "Your R-peak intervals show 98% consistency, indicating a very stable cardiac rhythm. This reflects healthy electrical conduction through the ventricles." },
-  { name: "Breathing Rate", contribution: +1, color: "#27C28A", status: "positive", desc: "Respiratory rate steady and calm throughout the day.", sparkData: [15, 16, 15, 16, 17, 16, 15], detail: "Your average breathing rate of 16 breaths per minute is within the ideal range. Respiratory-sinus arrhythmia patterns are healthy, showing good cardiovascular-respiratory coupling." },
-  { name: "Stress Index", contribution: -3, color: "#F5A623", status: "negative", desc: "Stress levels slightly elevated this week.", sparkData: [18, 22, 28, 32, 28, 24, 26], detail: "Your average stress index this week is 26/100, up from 18/100 last week. Consider incorporating relaxation techniques or adjusting workload to help reduce physiological stress markers." },
-  { name: "Strain Level", contribution: -2, color: "#F5A623", status: "negative", desc: "Physical exertion has been higher than baseline.", sparkData: [20, 25, 35, 40, 38, 32, 30], detail: "Your average strain level is at 32% of maximum capacity this week, up from 22% last week. While exercise is beneficial, ensure adequate recovery time between intense activities." },
-  { name: "Wearing Consistency", contribution: +2, color: "#27C28A", status: "positive", desc: "You wore the shirt on 87% of days — good coverage.", sparkData: [80, 85, 82, 90, 88, 85, 87], detail: "Consistent wearing gives the AI more data to work with. Your 87% coverage is above the threshold needed for reliable trend analysis." },
-  { name: "Sleep Heart Rate", contribution: -2, color: "#F5A623", status: "negative", desc: "Your overnight heart rate has been slightly elevated.", sparkData: [62, 63, 64, 65, 63, 64, 63], detail: "Your average sleeping heart rate this week is 63 BPM, up from 60 BPM. This can be influenced by late meals, stress, or room temperature." },
-];
-
-const donutData = riskFactors.map(f => ({
-  name: f.name,
-  value: Math.abs(f.contribution) || 1,
-  color: f.color,
-}));
+const RISK_SCORE=0;const RISK_TIER="Wait";const RISK_COLOR="#9AA0B8";const RISK_DELTA="0";const RISK_DELTA_COLOR="#9AA0B8";const last7=[0,0,0,0,0,0,0];const dayLabels=["Thu","Fri","Sat","Sun","Mon","Tue","Wed"];function genData(range:string,type:string){return[];}const eventMarkers:any[]=[];const alertHistory:any[]=[];const riskFactors:any[]=[];const donutData=[{name:"No Data",value:1,color:"#9AA0B8"}];
 
 const recommendations = [
   { icon: Moon, action: "Rest this afternoon", context: "Your rhythm tends to be irregular on high-activity days." },
@@ -148,6 +88,8 @@ function MiniSparkline({ data, color, width = 80, height = 24 }: { data: number[
 // ── Main Component ──
 export function RiskTrendsScreen() {
   const c = useColors();
+
+  const handleShare=(reportType:string)=>{try{navigator.clipboard.writeText(`${window.location.origin}/share/trends?type=${reportType}`);alert(`Successfully generated secure sharing link for ${reportType} report and copied it to your clipboard!`);}catch(e){alert("Failed to copy link. Please manually copy the report URL.");}};
   const { summaries, loading } = useDailySummaries();
   const [range, setRange] = useState<"7d" | "30d" | "90d" | "1y">("30d");
   const [chartType, setChartType] = useState<"area" | "bar">("area");
@@ -172,9 +114,9 @@ export function RiskTrendsScreen() {
   const rangeLabels: Record<string, string> = { "7d": "7 days", "30d": "30 days", "90d": "90 days", "1y": "1 year" };
 
   const secondaryMetrics = [
-    { name: "Resting Heart Rate", value: "68", unit: "BPM", delta: "-4 BPM", deltaColor: c.green, status: "Improving", statusColor: c.green, data: hrData },
-    { name: "HRV (RMSSD)", value: "37", unit: "ms", delta: "-7 ms", deltaColor: c.amber, status: "Low — rest recommended", statusColor: c.amber, data: hrvData },
-    { name: "Rhythm Stability", value: "93", unit: "%", delta: "-2%", deltaColor: c.amber, status: "Occasional irregularity", statusColor: c.amber, data: rhythmData, isBar: true },
+    { name: "Heart Rate", value: "0", unit: "BPM", delta: "0 BPM", deltaColor: c.bodySecondary, status: "No data", statusColor: c.bodySecondary, data: [] },
+    { name: "SpO2", value: "0", unit: "%", delta: "0 %", deltaColor: c.bodySecondary, status: "No data", statusColor: c.bodySecondary, data: [] },
+    { name: "Temperature", value: "0", unit: "°C", delta: "0 °C", deltaColor: c.bodySecondary, status: "No data", statusColor: c.bodySecondary, data: [] },
   ];
 
   const visibleAlerts = showAllAlerts ? alertHistory : alertHistory.slice(0, 5);
@@ -207,21 +149,21 @@ export function RiskTrendsScreen() {
                   {f.contribution > 0 ? `+${f.contribution}` : f.contribution === 0 ? "—" : f.contribution}
                 </span>
               </div>
-              {/* Contribution bar */}
-              <div className="relative h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: c.ringTrack }}>
-                {f.status === "positive" && (
-                  <div className="absolute left-0 top-0 h-full rounded-full" style={{ width: `${Math.min(100, 50 + f.contribution * 5)}%`, background: f.color }} />
-                )}
-                {f.status === "negative" && (
-                  <div className="absolute right-0 top-0 h-full rounded-full" style={{ width: `${Math.min(100, 50 + Math.abs(f.contribution) * 5)}%`, background: f.color }} />
-                )}
-                {f.status === "neutral" && (
-                  <button onClick={() => alert("Report link copied to clipboard!")} className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg w-full transition-colors" style={{ background: c.blue, color: "#fff" }}>
-                <Share2 size={16} />
-                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500 }}>Share trend report</span>
-              </button>
-                )}
-              </div>
+              {f.status !== "neutral" ? (
+                <div className="relative h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: c.ringTrack }}>
+                  {f.status === "positive" && (
+                    <div className="absolute left-0 top-0 h-full rounded-full" style={{ width: `${Math.min(100, 50 + f.contribution * 5)}%`, background: f.color }} />
+                  )}
+                  {f.status === "negative" && (
+                    <div className="absolute right-0 top-0 h-full rounded-full" style={{ width: `${Math.min(100, 50 + Math.abs(f.contribution) * 5)}%`, background: f.color }} />
+                  )}
+                </div>
+              ) : (
+                <button onClick={() => handleShare("trends")} className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg w-full transition-colors mb-1.5 active:scale-95" style={{ background: c.blue, color: "#fff" }}>
+                  <Share2 size={16} />
+                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500 }}>Share trend report</span>
+                </button>
+              )}
               <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.rightSecondary }}>{f.desc}</span>
             </button>
             {expandedFactor === i && (
@@ -344,7 +286,7 @@ export function RiskTrendsScreen() {
                     {[1, 2, 3, 4, 5].map(i => <div key={`conf-${i}`} className="w-1 h-1 rounded-full" style={{ background: i <= 4 ? c.red : c.cardBorder }} />)}
                   </div>
                 </div>
-                <button onClick={() => alert("Report link copied to clipboard!")} className="flex items-center gap-1 ml-auto" style={{ color: c.red, fontFamily: "Syne, sans-serif", fontSize: 12 }}>
+                <button onClick={() => handleShare("trends")} className="flex items-center gap-1 ml-auto active:scale-95 transition-all" style={{ color: c.red, fontFamily: "Syne, sans-serif", fontSize: 12 }}>
                   <Share2 size={12} /> Share with doctor
                 </button>
               </div>
@@ -528,7 +470,7 @@ export function RiskTrendsScreen() {
                   : "You are close to your personal baseline on most metrics. HRV is the main area trailing your established normal range."}
               </p>
               <div className="flex justify-end mt-3">
-                <button className="flex items-center gap-1.5 px-4 py-2 rounded-lg" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
+                <button onClick={() => handleShare("comparison")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg active:scale-95 transition-all" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
                   <Share2 size={13} /> Share comparison report
                 </button>
               </div>

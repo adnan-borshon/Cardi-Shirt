@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Search, Filter, Share2, Download, FileText, MessageSquare, Play, Pause,
   ZoomIn, ZoomOut, ToggleLeft, ToggleRight, ChevronRight, Heart, Activity,
   Clock, Sparkles, Copy, X, Loader2
 } from "lucide-react";
 import { useTokens } from "./ThemeContext";
-import { useECGRecords } from "./useBackend";
+import { useECGRecords, API_URL } from "./useBackend";
 
 // --- Mock Data ---
 type SessionType = "continuous" | "manual" | "alert" | "doctor";
@@ -22,14 +22,7 @@ interface Session {
   shared: boolean;
 }
 
-const sessions: Session[] = [
-  { id: "s1", dateGroup: "Today", date: "3 Apr 2026", time: "3:42 PM", type: "alert", duration: "Continuous — 4h 22m", hrRange: "68–94 BPM", aiStatus: "anomaly", aiStatusText: "1 anomaly detected", shared: false },
-  { id: "s2", dateGroup: "Today", date: "3 Apr 2026", time: "9:15 AM", type: "manual", duration: "Manual — 32s", hrRange: "72–78 BPM", aiStatus: "normal", aiStatusText: "Normal", shared: true },
-  { id: "s3", dateGroup: "Yesterday", date: "2 Apr 2026", time: "11:30 PM", type: "continuous", duration: "Continuous — 8h 42m", hrRange: "54–72 BPM", aiStatus: "normal", aiStatusText: "Normal", shared: false },
-  { id: "s4", dateGroup: "Yesterday", date: "2 Apr 2026", time: "2:00 PM", type: "doctor", duration: "Doctor requested — 30s", hrRange: "70–76 BPM", aiStatus: "normal", aiStatusText: "Normal", shared: true },
-  { id: "s5", dateGroup: "Monday 31 March", date: "31 Mar 2026", time: "9:15 AM", type: "manual", duration: "Manual — 30s", hrRange: "66–74 BPM", aiStatus: "normal", aiStatusText: "Normal", shared: false },
-  { id: "s6", dateGroup: "Monday 31 March", date: "31 Mar 2026", time: "3:22 AM", type: "alert", duration: "Alert capture — 2m 14s", hrRange: "88–112 BPM", aiStatus: "alert", aiStatusText: "Alert — irregular rhythm", shared: true },
-];
+const sessions: Session[] = [];
 
 const typeColors: Record<SessionType, string> = { continuous: "#27C28A", manual: "#E8304A", alert: "#F5A623", doctor: "#4A90D9" };
 const filterChips = ["All", "Flagged", "Normal", "Doctor Shared", "Manual"];
@@ -47,16 +40,11 @@ const LEAD_TEMPLATES = [ECG_TEMPLATE_LEAD_I, ECG_TEMPLATE_LEAD_II, ECG_TEMPLATE_
 
 const leads3 = ["I", "II", "III"];
 
-const detectedEvents = [
-  { time: "0:12:34", type: "Irregular rhythm detected", duration: "~40 seconds", confidence: 4, desc: "A brief irregular period with widened QRS complexes, self-resolved.", alert: true },
-  { time: "0:12:38", type: "T wave inversion — Lead III", duration: "During irregular episode", confidence: 4, desc: "Inverted T waves detected in Lead III during the irregular rhythm event. Resolved when rhythm normalized.", alert: true },
-  { time: "1:45:10", type: "Heart rate elevation", duration: "~3 minutes", confidence: 3, desc: "HR rose to 94 BPM, likely associated with physical activity.", alert: false },
-  { time: "2:03:22", type: "ST segment elevation", duration: "Brief, +0.8 mV", confidence: 3, desc: "Mild ST elevation in Lead II, within normal variant range for this patient.", alert: false },
-];
+const detectedEvents: any[] = [];
 
 export function ECGRecordsScreen() {
   const tk = useTokens();
-  const {records:backendRecords,loading:backendLoading}=useECGRecords();
+  const {records:backendRecords,loading:backendLoading,refetch}=useECGRecords();
 
   // Merge backend records into session list
   const backendSessions:Session[]=useMemo(()=>backendRecords.map((r,i)=>{
@@ -84,8 +72,15 @@ export function ECGRecordsScreen() {
     };
   }),[backendRecords]) as any[];
 
-  const allSessions=useMemo(()=>[...backendSessions,...sessions],[backendSessions]);
-  const [selectedSession, setSelectedSession] = useState(sessions[0]);
+  const allSessions=useMemo(()=>backendSessions,[backendSessions]);
+  const [activeSession, setActiveSession] = useState<any>(null);
+  useEffect(()=>{if(allSessions.length>0&&!activeSession)setActiveSession(allSessions[0]);},[allSessions]);
+  const selectedSession=useMemo(()=>{
+    if(!activeSession)return allSessions[0]||{date:"No data",time:"",duration:"",type:"manual",hrRange:"",aiStatus:"normal",aiStatusText:"",shared:false};
+    const found=allSessions.find(s=>s.id===activeSession.id);
+    return found||activeSession;
+  },[activeSession,allSessions]);
+
   const [activeFilter, setActiveFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showAnnotations, setShowAnnotations] = useState(true);
@@ -93,6 +88,28 @@ export function ECGRecordsScreen() {
   const [gain, setGain] = useState<"0.5" | "1" | "2">("1");
   const [playing, setPlaying] = useState(false);
   const [doctorNote, setDoctorNote] = useState("");
+  const [analyzingId, setAnalyzingId] = useState<number | null>(null);
+
+  const handleAnalyze=async(recordId:number)=>{
+    if(analyzingId!==null)return;
+    setAnalyzingId(recordId);
+    try{
+      const res=await fetch(`${API_URL}/api/analyze-ecg`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:recordId})
+      });
+      if(res.ok){
+        await refetch();
+      }else{
+        alert("Analysis failed");
+      }
+    }catch(e){
+      console.error(e);
+    }finally{
+      setAnalyzingId(null);
+    }
+  };
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const offsetRef = useRef(0);
   const animRef = useRef(0);
@@ -127,15 +144,22 @@ export function ECGRecordsScreen() {
     
     // Select the appropriate template based on lead index (0=Lead I, 1=Lead II, 2=Lead III)
     const template = LEAD_TEMPLATES[leadIdx % 3];
+    const waveform = (selectedSession as any)?._waveform;
     
     for (let x = 0; x < w; x++) {
-      const sampleIdx = (x + offsetRef.current + phaseShift) / 3;
-      const idx = sampleIdx % template.length;
-      const fi = Math.floor(idx);
-      const frac = idx - fi;
-      const v0 = template[fi % template.length];
-      const v1 = template[(fi + 1) % template.length];
-      let val = v0 + (v1 - v0) * frac + (Math.random() - 0.5) * 0.01;
+      let val = 0;
+      if (waveform && waveform.length > 0) {
+        const idx = Math.floor((x + offsetRef.current) / 3) % waveform.length;
+        val = waveform[idx];
+      } else {
+        const sampleIdx = (x + offsetRef.current + phaseShift) / 3;
+        const idx = sampleIdx % template.length;
+        const fi = Math.floor(idx);
+        const frac = idx - fi;
+        const v0 = template[fi % template.length];
+        const v1 = template[(fi + 1) % template.length];
+        val = v0 + (v1 - v0) * frac + (Math.random() - 0.5) * 0.01;
+      }
       const y = yCenter - val * amplitude;
       if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
@@ -207,7 +231,7 @@ export function ECGRecordsScreen() {
             <div key={group}>
               <div className="px-3 py-2" style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>{group}</div>
               {items.map((s) => (
-                <button key={s.id} onClick={() => setSelectedSession(s)} className="w-full text-left px-3 py-2.5 transition-colors" style={{ background: selectedSession.id === s.id ? tk.chipBg : "transparent" }}>
+                <button key={s.id} onClick={() => setActiveSession(s)} className="w-full text-left px-3 py-2.5 transition-colors" style={{ background: (activeSession?.id||allSessions[0]?.id) === s.id ? tk.chipBg : "transparent" }}>
                   <div className="flex items-start gap-2">
                     <div className="w-[3px] rounded-full self-stretch flex-shrink-0 mt-1" style={{ background: typeColors[s.type], minHeight: 36 }} />
                     <div className="flex-1 min-w-0">
@@ -233,14 +257,13 @@ export function ECGRecordsScreen() {
         </div>
       </div>
 
-      {/* Center Panel — ECG Viewer */}
       <div className="flex-1 flex flex-col h-full overflow-y-auto hide-scrollbar" style={{ scrollbarWidth: "none" }}>
         {/* Session Header */}
         <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ background: tk.cardBg, borderBottom: `0.5px solid ${tk.cardBorder}`, boxShadow: tk.shadow }}>
           <div className="flex items-center gap-3">
-            <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 15 }}>{selectedSession.date}</span>
-            <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 13 }}>{selectedSession.time}</span>
-            <span className="px-2 py-0.5 rounded-full" style={{ background: `${typeColors[selectedSession.type]}15`, color: typeColors[selectedSession.type], fontFamily: "DM Mono, monospace", fontSize: 10 }}>{selectedSession.duration}</span>
+            <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 15 }}>{selectedSession?.date||"No Data"}</span>
+            <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 13 }}>{selectedSession?.time}</span>
+            <span className="px-2 py-0.5 rounded-full" style={{ background: `${typeColors[selectedSession?.type||"manual"]}15`, color: typeColors[selectedSession?.type||"manual"], fontFamily: "DM Mono, monospace", fontSize: 10 }}>{selectedSession?.duration}</span>
           </div>
           <div className="flex items-center gap-2">
             <button className="p-1.5 rounded-lg transition-colors" style={{ color: tk.textSecondary }} title="Export"><Download size={16} /></button>
@@ -318,8 +341,23 @@ export function ECGRecordsScreen() {
               <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>AI Analysis</span>
             </div>
             <p style={{ color: tk.textPrimary, fontFamily: "'DM Serif Display', serif", fontSize: 14, lineHeight: 1.65 }}>
-              {(selectedSession as any)._aiSummary || `This recording was made on ${selectedSession.date}. Your heart showed a normal sinus rhythm for most of the session, with one brief irregular period at the 12-minute mark that resolved on its own. Overall, your cardiac pattern remains within your established baseline.`}
+              {(selectedSession as any)._aiSummary || (selectedSession._backendId ? `This session has not been clinically analyzed yet. Click below to generate a 2-sentence clinical description using Gemini 2.0 Flash Lite.` : `This recording was made on ${selectedSession.date}. Your heart showed a normal sinus rhythm for most of the session, with one brief irregular period at the 12-minute mark that resolved on its own. Overall, your cardiac pattern remains within your established baseline.`)}
             </p>
+            {!(selectedSession as any)._aiSummary && (selectedSession as any)._backendId && (
+              <button disabled={analyzingId===(selectedSession as any)._backendId} onClick={()=>handleAnalyze((selectedSession as any)._backendId)} className="mt-3 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-50" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12 }}>
+                {analyzingId===(selectedSession as any)._backendId ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Analyzing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} />
+                    <span>Analyze Session</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Key Metrics */}
             <div className="grid grid-cols-4 gap-2 mt-4">
