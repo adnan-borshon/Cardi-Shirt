@@ -6,8 +6,10 @@ import { HamburgerMenu } from "./HamburgerMenu";
 import { AIChat } from "./AIChat";
 import { useTokens } from "./ThemeContext";
 import { MessageCircle, X } from "lucide-react";
+import { useGeolocationWatcher } from "./useBackend";
 
 export function AppLayout() {
+  useGeolocationWatcher();
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const tk = useTokens();
