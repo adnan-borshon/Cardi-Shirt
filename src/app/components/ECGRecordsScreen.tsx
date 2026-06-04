@@ -1,1 +1,596 @@
-import React,{useState,useMemo}from"react";import{Search,Play,Pause,ZoomIn,ZoomOut,Sparkles,Loader2}from"lucide-react";import{useTokens}from"./ThemeContext";import{useECGRecords,API_URL}from"./useBackend";import{LineChart,Line,ResponsiveContainer,XAxis,YAxis,CartesianGrid}from"recharts";function renderMarkdown(md:string,tk:any){if(!md)return null;const lines=md.split("\n");return lines.map((line,idx)=>{const l=line.trim();if(!l)return null;if(l.startsWith("### ")){return<h3 key={idx} style={{color:"#E8304A",fontFamily:"Syne, sans-serif",fontSize:13,fontWeight:600,marginTop:12,marginBottom:6}}>{l.substring(4)}</h3>;}if(l.startsWith("* **")){const match=l.match(/\* \*\*(.*?)\*\*(.*)/);if(match){return<div key={idx} style={{fontFamily:"Syne, sans-serif",fontSize:12,color:tk.textPrimary,marginLeft:8,marginBottom:4}}><strong style={{color:tk.textSecondary,fontWeight:600}}>{match[1]}</strong>{match[2]}</div>;}}if(l.startsWith("* ")){return<div key={idx} style={{fontFamily:"Syne, sans-serif",fontSize:12,color:tk.textPrimary,marginLeft:16,marginBottom:4,position:"relative",paddingLeft:10}}><span style={{position:"absolute",left:0,color:"#E8304A"}}>•</span>{l.substring(2)}</div>;}return<p key={idx} style={{color:tk.textPrimary,fontFamily:"'DM Serif Display', serif",fontSize:12,lineHeight:1.6,marginBottom:4}}>{l}</p>;});}export function ECGRecordsScreen(){const tk=useTokens();const{records:backendRecords,loading:backendLoading,refetch}=useECGRecords();const backendSessions=useMemo(()=>{return backendRecords.map(r=>{const d=new Date(r.timestamp);const wf=r.waveform_data||[];const vals=wf.filter((v:any)=>typeof v==="number");const minV=vals.length?Math.min(...vals):0;const maxV=vals.length?Math.max(...vals):0;const durSec=Math.round(wf.length/100);const durationStr=durSec>=60?`${Math.floor(durSec/60)}m ${durSec%60}s`:`${durSec}s`;const maxPts=800;const step=Math.max(1,Math.ceil(wf.length/maxPts));const chartPts=[];for(let i=0;i<wf.length;i+=step){chartPts.push({index:i,value:wf[i]});}return{id:`backend-${r.id}`,dateGroup:"From Device",date:d.toLocaleDateString("en-US",{day:"numeric",month:"short",year:"numeric"}),time:d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}),type:"manual",duration:`${durationStr} duration`,hrRange:`${minV.toFixed(1)}–${maxV.toFixed(1)} mV`,aiStatusText:r.ai_summary&&!r.ai_summary.includes("unavailable")?"AI analyzed":"Pending",_backendId:r.id,_aiSummary:r.ai_summary||"",_waveform:wf,chartData:chartPts};});},[backendRecords]);const[activeSession,setActiveSession]=useState<any>(null);React.useEffect(()=>{if(backendSessions.length>0&&!activeSession)setActiveSession(backendSessions[0]);},[backendSessions,activeSession]);const selectedSession=useMemo(()=>{if(!activeSession)return backendSessions[0]||null;return backendSessions.find(s=>s.id===activeSession.id)||activeSession;},[activeSession,backendSessions]);const[searchQuery,setSearchQuery]=useState("");const[speed,setSpeed]=useState<"25"|"50">("25");const[gain,setGain]=useState<"0.5"|"1"|"2">("1");const[analyzingId,setAnalyzingId]=useState<number|null>(null);const handleAnalyze=async(recordId:number)=>{if(analyzingId!==null)return;setAnalyzingId(recordId);try{const res=await fetch(`${API_URL}/api/analyze-ecg`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:recordId})});if(res.ok)await refetch();else alert("Analysis failed");}catch(e){console.error(e);}finally{setAnalyzingId(null);}};if(!selectedSession)return<div className="flex h-full items-center justify-center" style={{background:tk.pageBg,color:tk.textMuted}}>No ECG records found.</div>;return(<div className="flex h-full" style={{background:tk.pageBg,fontFamily:"Syne, sans-serif"}}><div className="w-[280px] flex-shrink-0 flex flex-col h-full overflow-hidden hidden md:flex" style={{background:tk.cardBg,borderRight:`0.5px solid ${tk.cardBorder}`}}><div className="p-3" style={{borderBottom:`0.5px solid ${tk.cardBorder}`}}><div className="flex items-center gap-2 px-2.5 py-2 rounded-lg" style={{background:tk.inputBg,borderWidth:0.5,borderStyle:"solid",borderColor:tk.cardBorder}}><Search size={14} style={{color:tk.textMuted}}/><input value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} placeholder="Search records..." className="flex-1 outline-none bg-transparent" style={{color:tk.textPrimary,fontFamily:"Syne, sans-serif",fontSize:12}}/></div></div><div className="flex-1 overflow-y-auto"><div className="px-3 py-2" style={{color:tk.textSecondary,fontFamily:"Syne, sans-serif",fontSize:12}}>From Device</div>{backendSessions.map((s)=><button key={s.id} onClick={()=>setActiveSession(s)} className="w-full text-left px-3 py-2.5 transition-colors" style={{background:activeSession?.id===s.id?tk.chipBg:"transparent"}}><div className="flex items-start gap-2"><div className="w-[3px] rounded-full self-stretch flex-shrink-0 mt-1" style={{background:"#27C28A",minHeight:36}}/><div className="flex-1 min-w-0"><div className="flex items-center justify-between"><span style={{color:tk.textPrimary,fontFamily:"DM Mono, monospace",fontSize:12}}>{s.time}</span><span className="px-1.5 py-0.5 rounded-full" style={{background:"#27C28A15",color:"#27C28A",fontFamily:"DM Mono, monospace",fontSize:9}}>{s.aiStatusText}</span></div><div style={{color:tk.textSecondary,fontFamily:"Syne, sans-serif",fontSize:11,marginTop:2}}>{s.duration}</div><div style={{color:tk.textMuted,fontFamily:"DM Mono, monospace",fontSize:10,marginTop:1}}>{s.hrRange}</div></div></div></button>)}</div></div><div className="flex-1 flex flex-col h-full overflow-y-auto hide-scrollbar" style={{scrollbarWidth:"none"}}><div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{background:tk.cardBg,borderBottom:`0.5px solid ${tk.cardBorder}`,boxShadow:tk.shadow}}><div className="flex items-center gap-3"><span style={{color:tk.textPrimary,fontFamily:"Syne, sans-serif",fontSize:15}}>{selectedSession.date}</span><span style={{color:tk.textSecondary,fontFamily:"DM Mono, monospace",fontSize:13}}>{selectedSession.time}</span><span className="px-2 py-0.5 rounded-full" style={{background:"rgba(39,194,138,0.15)",color:"#27C28A",fontFamily:"DM Mono, monospace",fontSize:10}}>{selectedSession.duration}</span></div></div><div className="flex flex-wrap items-center gap-3 px-4 py-2 flex-shrink-0" style={{background:tk.cardBg,borderBottom:`0.5px solid ${tk.cardBorder}`}}><div className="flex items-center gap-1.5"><span style={{color:tk.textMuted,fontFamily:"DM Mono, monospace",fontSize:10}}>Speed</span><button onClick={()=>setSpeed(speed==="25"?"50":"25")} className="px-2 py-0.5 rounded" style={{background:tk.chipBg,color:tk.textPrimary,fontFamily:"DM Mono, monospace",fontSize:11}}>{speed}mm/s</button></div><div className="flex items-center gap-1.5"><span style={{color:tk.textMuted,fontFamily:"DM Mono, monospace",fontSize:10}}>Gain</span>{(["0.5","1","2"] as const).map((g)=><button key={g} onClick={()=>setGain(g)} className="px-2 py-0.5 rounded" style={{background:gain===g?"rgba(232,48,74,0.1)":tk.chipBg,color:gain===g?"#E8304A":tk.textSecondary,fontFamily:"DM Mono, monospace",fontSize:11}}>{g}x</button>)}</div></div><div className="flex-shrink-0 p-2" style={{background:tk.ecgBg}}><div className="h-[250px] w-full" style={{background:tk.ecgBg}}><ResponsiveContainer width="100%" height="100%"><LineChart data={selectedSession.chartData}><CartesianGrid strokeDasharray="3 3" stroke={tk.ecgGrid}/><XAxis dataKey="index" hide/><YAxis domain={['auto','auto']} hide/><Line type="monotone" dataKey="value" stroke={tk.textPrimary} dot={false} strokeWidth={gain==="2"?2:gain==="0.5"?0.5:1} isAnimationActive={false}/></LineChart></ResponsiveContainer></div></div><div className="flex-shrink-0 p-4 space-y-4" style={{background:tk.pageBg}}><div className="rounded-xl p-4" style={{background:tk.cardBg,boxShadow:tk.shadow}}><div className="flex items-center gap-1.5 mb-2"><Sparkles size={14} style={{color:"#E8304A"}}/><span style={{color:tk.textSecondary,fontFamily:"Syne, sans-serif",fontSize:12}}>AI Analysis</span></div><div className="space-y-1">{selectedSession._aiSummary?renderMarkdown(selectedSession._aiSummary,tk):<p style={{color:tk.textPrimary,fontFamily:"'DM Serif Display', serif",fontSize:13,lineHeight:1.65}}>This session has not been clinically analyzed yet. Click below to generate a comprehensive, structured clinical description using CardiShirt AI.</p>}</div>{!selectedSession._aiSummary&&<button disabled={analyzingId===selectedSession._backendId} onClick={()=>handleAnalyze(selectedSession._backendId)} className="mt-3 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-50" style={{background:"#E8304A",color:"#fff",fontFamily:"Syne, sans-serif",fontSize:12}}>{analyzingId===selectedSession._backendId?(<><Loader2 size={14} className="animate-spin"/><span>Analyzing...</span></>):(<><Sparkles size={14}/><span>Analyze Session</span></>)}</button>}</div></div></div></div>);}
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import {
+  Search, Share2, Download, FileText, Play, Pause,
+  ZoomIn, ZoomOut, ToggleLeft, ToggleRight, Heart, Activity,
+  Clock, Sparkles, Copy, X, Loader2
+} from "lucide-react";
+import { useTokens } from "./ThemeContext";
+import { useECGRecords, API_URL } from "./useBackend";
+
+// Base templates for fallback simulations
+const ECG_TEMPLATE_LEAD_II = [
+  0, 0, 0, 0, 0, 0.02, 0.04, 0.02, 0, -0.02, 0, 0, 0.05, 0.1, 0.15, 0.08,
+  -0.4, 1.0, -0.3, -0.1, 0.05, 0.1, 0.15, 0.2, 0.22, 0.2, 0.15, 0.1, 0.05,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const ECG_TEMPLATE_LEAD_I = [
+  0, 0, 0, 0, 0, 0.01, 0.03, 0.01, 0, -0.01, 0, 0, 0.04, 0.08, 0.12, 0.06,
+  -0.25, 0.7, -0.2, -0.08, 0.04, 0.08, 0.12, 0.15, 0.16, 0.15, 0.12, 0.08, 0.04,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const ECG_TEMPLATE_LEAD_III = [
+  0, 0, 0, 0, 0, 0.01, 0.01, 0.01, 0, -0.01, 0, 0, 0.01, 0.02, 0.03, 0.02,
+  -0.15, 0.3, -0.1, -0.02, 0.01, 0.02, 0.03, 0.05, 0.06, 0.05, 0.03, 0.02, 0.01,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const LEAD_TEMPLATES = [ECG_TEMPLATE_LEAD_I, ECG_TEMPLATE_LEAD_II, ECG_TEMPLATE_LEAD_III];
+const filterChips = ["All", "Flagged", "Normal", "Manual"];
+
+function renderMarkdown(md: string, tk: any) {
+  if (!md) return null;
+  const lines = md.split("\n");
+  return lines.map((line, idx) => {
+    const l = line.trim();
+    if (!l) return null;
+    if (l.startsWith("### ")) {
+      return (
+        <h3 key={idx} style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 600, marginTop: 12, marginBottom: 6 }}>
+          {l.substring(4)}
+        </h3>
+      );
+    }
+    if (l.startsWith("* **")) {
+      const match = l.match(/\* \*\*(.*?)\*\*(.*)/);
+      if (match) {
+        return (
+          <div key={idx} style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: tk.textPrimary, marginLeft: 8, marginBottom: 4 }}>
+            <strong style={{ color: tk.textSecondary, fontWeight: 600 }}>{match[1]}</strong>
+            {match[2]}
+          </div>
+        );
+      }
+    }
+    if (l.startsWith("* ")) {
+      return (
+        <div key={idx} style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: tk.textPrimary, marginLeft: 16, marginBottom: 4, position: "relative", paddingLeft: 10 }}>
+          <span style={{ position: "absolute", left: 0, color: "#E8304A" }}>•</span>
+          {l.substring(2)}
+        </div>
+      );
+    }
+    return (
+      <p key={idx} style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12, lineHeight: 1.6, marginBottom: 4 }}>
+        {l}
+      </p>
+    );
+  });
+}
+
+export function ECGRecordsScreen() {
+  const tk = useTokens();
+  const { records: backendRecords, loading: backendLoading, refetch } = useECGRecords();
+
+  const [activeSession, setActiveSession] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState("All");
+  const [showAnnotations, setShowAnnotations] = useState(true);
+  const [speed, setSpeed] = useState<"25" | "50">("25");
+  const [gain, setGain] = useState<"0.5" | "1" | "2">("1");
+  const [playing, setPlaying] = useState(false);
+  const [doctorNote, setDoctorNote] = useState("");
+  const [analyzingId, setAnalyzingId] = useState<number | null>(null);
+
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const offsetRef = useRef(0);
+  const animRef = useRef(0);
+
+  // Group database sessions and build parameters
+  const backendSessions = useMemo(() => {
+    return backendRecords
+      .map(r => {
+        const d = new Date(r.timestamp);
+        const wf = r.waveform_data || [];
+        const vals = wf.filter((v: any) => typeof v === "number");
+        const minV = vals.length ? Math.min(...vals) : 0;
+        const maxV = vals.length ? Math.max(...vals) : 0;
+        const durSec = Math.round(wf.length / 100);
+        const durationStr = durSec >= 60 ? `${Math.floor(durSec / 60)}m ${durSec % 60}s` : `${durSec}s`;
+
+        // Calculate basic status
+        const isAnomaly = r.ai_summary && (r.ai_summary.toLowerCase().includes("anomaly") || r.ai_summary.toLowerCase().includes("irregular") || r.ai_summary.toLowerCase().includes("tachycardia"));
+        const aiStatus = r.ai_summary && !r.ai_summary.includes("unavailable") ? (isAnomaly ? "alert" : "normal") : "pending";
+        const aiStatusText = r.ai_summary && !r.ai_summary.includes("unavailable") ? (isAnomaly ? "Anomaly" : "Normal") : "Pending";
+
+        return {
+          id: `backend-${r.id}`,
+          dateGroup: d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }),
+          date: d.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" }),
+          time: d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+          type: "manual",
+          duration: `${durationStr}`,
+          hrRange: `${minV.toFixed(1)}–${maxV.toFixed(1)} mV`,
+          aiStatus,
+          aiStatusText,
+          _backendId: r.id,
+          _aiSummary: r.ai_summary || "",
+          _waveform: wf,
+        };
+      })
+      .filter(s => {
+        // Search filter
+        const matchesSearch = s.date.toLowerCase().includes(searchQuery.toLowerCase()) || s.time.toLowerCase().includes(searchQuery.toLowerCase());
+        if (!matchesSearch) return false;
+
+        // Chip filter
+        if (activeFilter === "All") return true;
+        if (activeFilter === "Flagged") return s.aiStatus === "alert";
+        if (activeFilter === "Normal") return s.aiStatus === "normal";
+        if (activeFilter === "Manual") return s.type === "manual";
+        return true;
+      });
+  }, [backendRecords, searchQuery, activeFilter]);
+
+  // Set default active session
+  useEffect(() => {
+    if (backendSessions.length > 0 && !activeSession) {
+      setActiveSession(backendSessions[0]);
+    }
+  }, [backendSessions, activeSession]);
+
+  const selectedSession = useMemo(() => {
+    if (!activeSession) return backendSessions[0] || null;
+    return backendSessions.find(s => s.id === activeSession.id) || activeSession;
+  }, [activeSession, backendSessions]);
+
+  // Handle AI analysis request
+  const handleAnalyze = async (recordId: number) => {
+    if (analyzingId !== null) return;
+    setAnalyzingId(recordId);
+    try {
+      const res = await fetch(`${API_URL}/api/analyze-ecg`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: recordId })
+      });
+      if (res.ok) {
+        await refetch();
+      } else {
+        alert("Clinical analysis failed");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAnalyzingId(null);
+    }
+  };
+
+  // Custom multi-lead canvas renderer
+  const drawLeadECG = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number, leadIdx: number) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = tk.ecgBg;
+    ctx.fillRect(0, 0, w, h);
+
+    // Render Grid Lines
+    const gridCell = 4 * (speed === "50" ? 2 : 1);
+    ctx.strokeStyle = tk.ecgGrid;
+    ctx.lineWidth = 0.3;
+    for (let x = 0; x < w; x += gridCell) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += gridCell) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    ctx.strokeStyle = tk.ecgGridMajor;
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x < w; x += gridCell * 5) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += gridCell * 5) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+    const gainMult = gain === "0.5" ? 0.5 : gain === "2" ? 2 : 1;
+    ctx.strokeStyle = tk.textPrimary;
+    ctx.lineWidth = 1.2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+
+    const yCenter = h * 0.5;
+    const amplitude = (h * 0.35) * gainMult;
+    const pixelsPerSample = speed === "50" ? 5 : 3;
+    const numSamples = Math.ceil(w / pixelsPerSample);
+
+    const waveformData = selectedSession?._waveform || [];
+
+    if (waveformData.length > 0) {
+      // --- Playback actual SQLite database waveform data ---
+      const samples: number[] = [];
+      const currentOffset = Math.floor(offsetRef.current);
+
+      for (let i = 0; i < numSamples; i++) {
+        const idx = (currentOffset + i) % waveformData.length;
+        samples.push(waveformData[idx]);
+      }
+
+      // Dynamic Auto-Gain Scaling
+      let minVal = Infinity;
+      let maxVal = -Infinity;
+      for (let i = 0; i < samples.length; i++) {
+        const v = samples[i];
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+      }
+      const range = maxVal - minVal;
+
+      for (let x = 0; x < w; x++) {
+        const sampleIdx = Math.floor(x / pixelsPerSample);
+        const rawVal = samples[sampleIdx] ?? 0;
+
+        let val = 0;
+        if (range > 10) {
+          const norm = (rawVal - minVal) / range;
+          val = -0.4 + norm * 1.4;
+        } else if (range > 0.05) {
+          const norm = (rawVal - minVal) / range;
+          val = -0.4 + norm * 1.4;
+        }
+
+        // Apply Lead coefficients
+        let leadCoef = 1.0;
+        if (leadIdx === 0) leadCoef = 0.7; // Lead I
+        else if (leadIdx === 2) leadCoef = 0.3; // Lead III
+
+        const y = yCenter - (val * leadCoef) * amplitude;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+    } else {
+      // --- Fallback mock template simulation ---
+      const phaseShift = leadIdx * 9;
+      const template = LEAD_TEMPLATES[leadIdx % 3];
+      const templateLen = template.length;
+
+      for (let x = 0; x < w; x++) {
+        const sampleIdx = (x + offsetRef.current + phaseShift) / pixelsPerSample;
+        const idx = sampleIdx % templateLen;
+        const floorIdx = Math.floor(idx);
+        const frac = idx - floorIdx;
+        const v0 = template[floorIdx % templateLen];
+        const v1 = template[(floorIdx + 1) % templateLen];
+        let val = v0 + (v1 - v0) * frac + (Math.random() - 0.5) * 0.015;
+
+        const y = yCenter - (val * amplitude);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+    }
+
+    ctx.stroke();
+
+    // Render AI Segment Zone Highlights
+    if (showAnnotations) {
+      // Zone dimensions (mocked visually across beats)
+      const beatWidth = 120;
+      for (let bx = 0; bx < w; bx += beatWidth) {
+        const bStart = bx - ((offsetRef.current * 0.5) % beatWidth);
+        if (bStart < -beatWidth || bStart > w) continue;
+        
+        // P-Wave Zone (Blue)
+        ctx.fillStyle = "rgba(91, 138, 240, 0.06)";
+        ctx.fillRect(bStart + 15, 0, 16, h);
+        
+        // QRS Complex (Green)
+        ctx.fillStyle = "rgba(39, 194, 138, 0.06)";
+        ctx.fillRect(bStart + 35, 0, 18, h);
+        
+        // T-Wave Zone (Orange)
+        ctx.fillStyle = "rgba(245, 166, 35, 0.06)";
+        ctx.fillRect(bStart + 58, 0, 22, h);
+      }
+    }
+  }, [showAnnotations, speed, gain, tk, selectedSession]);
+
+  // Animation ticks
+  useEffect(() => {
+    const animate = () => {
+      if (playing) {
+        const speedStep = speed === "50" ? 4.5 : 2.2;
+        offsetRef.current += speedStep;
+        
+        // Loop offset boundary for real arrays
+        if (selectedSession?._waveform && selectedSession._waveform.length > 0) {
+          if (offsetRef.current >= selectedSession._waveform.length) {
+            offsetRef.current = 0;
+          }
+        }
+      }
+
+      // Draw active canvas elements
+      canvasRefs.current.forEach((c, i) => {
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        if (!ctx) return;
+        const dpr = window.devicePixelRatio || 1;
+        const w = c.clientWidth;
+        const h = c.clientHeight;
+        c.width = w * dpr;
+        c.height = h * dpr;
+        ctx.scale(dpr, dpr);
+        drawLeadECG(ctx, w, h, i);
+      });
+      animRef.current = requestAnimationFrame(animate);
+    };
+
+    animate();
+    return () => cancelAnimationFrame(animRef.current);
+  }, [drawLeadECG, playing, speed, selectedSession]);
+
+  const leads3 = ["Lead I", "Lead II", "Lead III"];
+  const statusColors = { normal: "#27C28A", anomaly: "#F5A623", alert: "#E8304A", pending: "#C2C8D6" };
+
+  return (
+    <div className="flex h-full animate-fade-in" style={{ background: tk.pageBg, fontFamily: "Syne, sans-serif" }}>
+      
+      {/* Left Sidebar: Historical Records List */}
+      <div className="w-[280px] flex-shrink-0 flex flex-col h-full overflow-hidden hidden md:flex" style={{ background: tk.cardBg, borderRight: `0.5px solid ${tk.cardBorder}` }}>
+        <div className="p-3 space-y-2" style={{ borderBottom: `0.5px solid ${tk.cardBorder}` }}>
+          
+          {/* Search box */}
+          <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg" style={{ background: tk.inputBg, borderWidth: 0.5, borderStyle: "solid", borderColor: tk.cardBorder }}>
+            <Search size={14} style={{ color: tk.textMuted }} />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search records..."
+              className="flex-1 outline-none bg-transparent"
+              style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}
+            />
+          </div>
+
+          {/* Filter Chips */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 hide-scrollbar">
+            {filterChips.map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  setActiveFilter(c);
+                  setActiveSession(null); // Reset active
+                }}
+                className="px-2.5 py-1 rounded-full whitespace-nowrap transition-colors"
+                style={{
+                  background: activeFilter === c ? "#E8304A" : tk.chipBg,
+                  color: activeFilter === c ? "#fff" : tk.textSecondary,
+                  fontFamily: "DM Mono, monospace",
+                  fontSize: 10
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Scrollable list */}
+        <div className="flex-1 overflow-y-auto">
+          {backendLoading && (
+            <div className="flex flex-col items-center justify-center py-10 text-xs font-mono text-gray-500 gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              Loading database sessions...
+            </div>
+          )}
+
+          {!backendLoading && backendSessions.length === 0 && (
+            <div className="text-center py-10 text-xs font-mono text-gray-400">
+              No matching records found.
+            </div>
+          )}
+
+          {backendSessions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                setActiveSession(s);
+                offsetRef.current = 0; // Reset offset on switch
+              }}
+              className="w-full text-left px-3 py-2.5 transition-colors border-b"
+              style={{
+                background: selectedSession?.id === s.id ? tk.chipBg : "transparent",
+                borderColor: tk.cardBorder
+              }}
+            >
+              <div className="flex items-start gap-2">
+                <div
+                  className="w-[3px] rounded-full self-stretch flex-shrink-0 mt-1"
+                  style={{ background: statusColors[s.aiStatus as keyof typeof statusColors], minHeight: 36 }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 12 }}>{s.time}</span>
+                    <span
+                      className="px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: `${statusColors[s.aiStatus as keyof typeof statusColors]}15`,
+                        color: statusColors[s.aiStatus as keyof typeof statusColors],
+                        fontFamily: "DM Mono, monospace",
+                        fontSize: 9
+                      }}
+                    >
+                      {s.aiStatusText}
+                    </span>
+                  </div>
+                  <div style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 11, marginTop: 2 }}>{s.duration}</div>
+                  <div style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, marginTop: 1 }}>{s.hrRange}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Center Panel: Interactive Multi-Lead Playback Viewer */}
+      {selectedSession ? (
+        <div className="flex-1 flex flex-col h-full overflow-y-auto hide-scrollbar" style={{ scrollbarWidth: "none" }}>
+          
+          {/* Active Session Info Header */}
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ background: tk.cardBg, borderBottom: `0.5px solid ${tk.cardBorder}`, boxShadow: tk.shadow }}>
+            <div className="flex items-center gap-3">
+              <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500 }}>{selectedSession.date}</span>
+              <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 13 }}>{selectedSession.time}</span>
+              <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(232, 48, 74, 0.1)", color: "#E8304A", fontFamily: "DM Mono, monospace", fontSize: 10 }}>{selectedSession.duration}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: tk.textSecondary }} title="Export PDF"><FileText size={16} /></button>
+              <button className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: tk.textSecondary }} title="Export CSV"><Download size={16} /></button>
+            </div>
+          </div>
+
+          {/* Active Viewer Toolbar */}
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2 flex-shrink-0" style={{ background: tk.cardBg, borderBottom: `0.5px solid ${tk.cardBorder}` }}>
+            <button onClick={() => setPlaying(!playing)} className="p-1.5 rounded-lg hover:scale-105 transition-all" style={{ background: playing ? "rgba(232,48,74,0.12)" : tk.chipBg, color: playing ? "#E8304A" : tk.textSecondary }}>
+              {playing ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+            <div className="flex items-center gap-1.5">
+              <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Speed</span>
+              <button onClick={() => setSpeed(speed === "25" ? "50" : "25")} className="px-2.5 py-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5" style={{ background: tk.chipBg, color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 11 }}>{speed}mm/s</button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Gain</span>
+              {(["0.5", "1", "2"] as const).map((g) => (
+                <button key={g} onClick={() => setGain(g)} className="px-2.5 py-0.5 rounded transition-all" style={{ background: gain === g ? "rgba(232,48,74,0.12)" : tk.chipBg, color: gain === g ? "#E8304A" : tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 11 }}>{g}x</button>
+              ))}
+            </div>
+            <button onClick={() => setShowAnnotations(!showAnnotations)} className="flex items-center gap-1.5 px-2.5 py-0.5 rounded transition-all" style={{ background: showAnnotations ? "rgba(232,48,74,0.12)" : tk.chipBg, color: showAnnotations ? "#E8304A" : tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 11 }}>
+              {showAnnotations ? <ToggleRight size={14} className="text-[#E8304A]" /> : <ToggleLeft size={14} />}
+              AI Markups
+            </button>
+          </div>
+
+          {/* 3-Lead Canvas Grid */}
+          <div className="flex-shrink-0 p-2" style={{ background: tk.ecgBg }}>
+            <div className="grid grid-cols-1 gap-px" style={{ background: tk.cardBorder }}>
+              {leads3.map((lead, i) => (
+                <div key={lead} className="relative border-b" style={{ background: tk.ecgBg, borderColor: tk.cardBorder }}>
+                  <span className="absolute top-1 left-2 z-10" style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 10 }}>{lead}</span>
+                  <canvas
+                    ref={(el) => { canvasRefs.current[i] = el; }}
+                    className="w-full"
+                    style={{ height: 90 }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Timeline bar for continuous database waves */}
+            {selectedSession._waveform && selectedSession._waveform.length > 0 && (
+              <div className="mt-2 px-2 py-2" style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 8 }}>
+                <div className="h-3 rounded-full relative overflow-hidden" style={{ background: tk.chipBg }}>
+                  <div
+                    className="absolute h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${(offsetRef.current / selectedSession._waveform.length) * 100}%`,
+                      background: "rgba(39,194,138,0.3)"
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1.5">
+                  <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 9 }}>Start</span>
+                  <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 9 }}>Duration: {selectedSession.duration}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Detailed clinical summary, notes, and comparison metrics */}
+          <div className="flex-shrink-0 p-4 space-y-4" style={{ background: tk.pageBg }}>
+            
+            {/* AI Summary Block */}
+            <div className="rounded-xl p-4" style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, boxShadow: tk.shadow }}>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Sparkles size={14} style={{ color: "#E8304A" }} />
+                <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Clinical AI Summary Description</span>
+              </div>
+              <div className="space-y-1">
+                {selectedSession._aiSummary ? (
+                  renderMarkdown(selectedSession._aiSummary, tk)
+                ) : (
+                  <p style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 13, lineHeight: 1.65 }}>
+                    This session has not been clinically analyzed yet. Click below to generate a comprehensive, structured clinical description using CardiShirt AI.
+                  </p>
+                )}
+              </div>
+              {!selectedSession._aiSummary && (
+                <button
+                  disabled={analyzingId === selectedSession._backendId}
+                  onClick={() => handleAnalyze(selectedSession._backendId)}
+                  className="mt-3 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+                  style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 500 }}
+                >
+                  {analyzingId === selectedSession._backendId ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Analyzing waveform...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      <span>Analyze Waveform</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Key Metrics Dashboard Card */}
+            <div className="rounded-xl p-4" style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, boxShadow: tk.shadow }}>
+              <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12, marginBottom: 8, display: "block" }}>CardiShirt Diagnostics</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { label: "Avg HR", value: "76", unit: "BPM", comp: "Within normal limits" },
+                  { label: "Voltage Range", value: selectedSession.hrRange, unit: "", comp: "Good signal amplitude" },
+                  { label: "HRV (RMSSD)", value: "44", unit: "ms", comp: "+2ms vs baseline" },
+                  { label: "Rhythm Verdict", value: selectedSession.aiStatus === "alert" ? "Arrythmia" : "Normal", unit: "", comp: selectedSession.aiStatus === "alert" ? "Ectopic events noted" : "Normal sinus rhythm" },
+                  { label: "ST Segment", value: "+0.15", unit: "mV", comp: "Stable baseline" },
+                  { label: "T Wave", value: "Upright", unit: "", comp: "Proper repolarization" },
+                  { label: "R-Peak Interval", value: "832", unit: "ms", comp: "Consistent R-R range" },
+                  { label: "Breathing Rate", value: "15", unit: "BPM", comp: "Stable respirations" },
+                ].map((m) => (
+                  <div key={m.label} className="p-2.5 rounded-lg border border-black/5 dark:border-white/5" style={{ background: tk.inputBg }}>
+                    <span style={{ color: tk.textMuted, fontFamily: "Syne, sans-serif", fontSize: 10 }}>{m.label}</span>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span style={{ color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 16, fontWeight: 500 }}>{m.value}</span>
+                      <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>{m.unit}</span>
+                    </div>
+                    <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 9, display: "block", marginTop: 2 }}>{m.comp}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Notes Section */}
+            <div className="rounded-xl p-4" style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, boxShadow: tk.shadow }}>
+              <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12, marginBottom: 6, display: "block" }}>Notes & Observations</span>
+              
+              <div className="p-2.5 rounded-lg mb-3" style={{ background: tk.inputBg }}>
+                <div className="flex items-center gap-1 mb-1">
+                  <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(91, 138, 240, 0.15)", color: "#5B8AF0", fontFamily: "DM Mono, monospace", fontSize: 9 }}>Patient note</span>
+                  <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 9 }}>3:50 PM</span>
+                </div>
+                <p style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Felt slightly short of breath after walking up Dhanmondi stairs. Triggered manual ECG capture.</p>
+              </div>
+
+              <textarea
+                value={doctorNote}
+                onChange={(e) => setDoctorNote(e.target.value)}
+                placeholder="Add medical observer notes here..."
+                className="w-full p-2.5 rounded-lg outline-none resize-none"
+                rows={2}
+                style={{ background: tk.inputBg, color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12, borderWidth: 0.5, borderStyle: "solid", borderColor: tk.cardBorder }}
+              />
+            </div>
+
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-xs font-mono text-gray-500">
+          No historical records match search parameters.
+        </div>
+      )}
+    </div>
+  );
+}

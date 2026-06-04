@@ -25,8 +25,9 @@ const io = new Server(server, {
 
 // ---------- Gemini AI setup ----------
 let geminiModel = null;
+let genAI = null;
 if (process.env.GEMINI_API_KEY) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
   console.log("[AI] Gemini 2.5 Flash Lite model ready");
 } else {
@@ -217,17 +218,31 @@ cron.schedule("0 0 * * *", async () => {
 // ---------- Phase 3: On-Demand Trigger (Chatbot) ----------
 app.post("/api/chat", async (req, res) => {
   try {
-    const { userMessage } = req.body;
+    const { userMessage, history = [] } = req.body;
     const db = await getDb();
-    const rows = db.exec(
-      "SELECT bpm,temp,fall_detected FROM realtime_vitals ORDER BY id DESC LIMIT 5",
-    );
-    const recentVitals =
-      rows.length && rows[0].values.length ? rows[0].values : "No vitals.";
+    const rows = db.exec("SELECT bpm,temp,spo2,fall_detected,timestamp FROM realtime_vitals ORDER BY id DESC LIMIT 5");
+    let vitalsSummary = "No recent vitals data available.";
+    if (rows.length && rows[0].values.length) {
+      vitalsSummary = rows[0].values.map(val => `Time: ${val[4]}, BPM: ${val[0]}, SpO2: ${val[2]}%, Temp: ${val[1]}°C, Fall: ${val[3] ? "Yes" : "No"}`).join("\n");
+    }
     let reply = "Chatbot unavailable.";
-    if (geminiModel) {
-      const prompt = `Imagine you are a doctor in this simulation for practice where You are CardiShirt AI assistant for a user who have a ecg, bpm and temperature hardware module on their body. You are CardiShirt AI. User: "${userMessage}". Recent vitals: ${JSON.stringify(recentVitals)}. Answer concisely as a guide, remind user you are AI but use internet to search the best advice for the user.`;
-      const aiRes = await geminiModel.generateContent(prompt);
+    if (geminiModel && genAI) {
+      const systemInstructionText = `You are CardiShirt AI, a supportive, empathetic health companion for the user (Adnan) who wears a CardiShirt smart medical wearable.
+Here is the user's latest vital data:
+${vitalsSummary}
+Guidelines:
+1. Be conversational and professional. Address the user as Adnan when appropriate.
+2. Use the vitals context to answer user questions about their current heart rate, SpO2, temp, etc.
+3. If they report chest pain, shortness of breath, dizziness or their vitals show high risk, advise seeking immediate medical attention and add: "I am an AI, not a doctor. Please consult a healthcare professional for clinical advice."
+4. Keep responses concise and use clear markdown formatting.
+5. Maintain context across the conversation using the provided chat history.`;
+      const chatModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite", systemInstruction: systemInstructionText });
+      const formattedHistory = history.map(h => ({
+        role: h.role === "user" ? "user" : "model",
+        parts: [{ text: h.text }]
+      }));
+      const chat = chatModel.startChat({ history: formattedHistory });
+      const aiRes = await chat.sendMessage(userMessage);
       reply = aiRes.response.text();
     }
     res.json({ reply });
