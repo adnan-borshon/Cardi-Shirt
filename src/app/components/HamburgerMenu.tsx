@@ -6,7 +6,7 @@ import {
   Radio, Heart, Wifi, Battery, AlertTriangle, Share2, Phone, Zap, Shirt,
   Globe, User, ChevronRight, Flame
 } from "lucide-react";
-import { useTokens } from "./ThemeContext";
+import { useTokens, useSharedLocalStorage } from "./ThemeContext";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard", badge: { text: "", type: "dot-green" as const } },
@@ -43,6 +43,10 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [lang, setLang] = useState<"en" | "bn">("en");
+  
+  const [firstName] = useSharedLocalStorage("cs_first_name", "Adnan");
+  const [avatarInitials] = useSharedLocalStorage("cs_avatar_initials", "AU");
+  const [avatarBgColor] = useSharedLocalStorage("cs_avatar_bgcolor", "#5B8AF0");
 
   const handleNav = (path: string) => {
     navigate(path);
@@ -79,9 +83,9 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
             <div className="flex-shrink-0 px-4 py-3" style={{ background: tk.cardElevated, borderBottom: `0.5px solid ${tk.cardBorder}` }}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>RK</div>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: avatarBgColor, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>{avatarInitials}</div>
                   <div>
-                    <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 14 }}>Adnan</div>
+                    <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 14 }}>{firstName}</div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(39,194,138,0.15)", color: "#27C28A", fontFamily: "DM Mono, monospace", fontSize: 10 }}>Stable</span>
                       <span style={{ color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 13 }}>72 BPM</span>
@@ -189,7 +193,7 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
             <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between" style={{ borderTop: `0.5px solid ${tk.cardBorder}`, background: tk.cardElevated }}>
               <div className="flex items-center gap-1.5">
                 <User size={12} style={{ color: tk.textMuted }} />
-                <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Patient: Adnan</span>
+                <span style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Patient: {firstName}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setLang("en")} style={{ color: lang === "en" ? tk.textPrimary : tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 11, textDecoration: lang === "en" ? "underline" : "none" }}>EN</button>

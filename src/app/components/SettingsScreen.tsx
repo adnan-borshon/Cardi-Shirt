@@ -11,6 +11,7 @@ import {
   Navigation, ShieldCheck, ShieldAlert, Share2, History
 } from "lucide-react";
 import { useTheme, useTokens } from "./ThemeContext";
+import jsPDF from "jspdf";
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -22,11 +23,23 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: 
       return initialValue;
     }
   });
+
+  useEffect(() => {
+    const handleStorageChange = (e: CustomEvent) => {
+      if (e.detail.key === key) {
+        setStoredValue(e.detail.value);
+      }
+    };
+    window.addEventListener("local-storage", handleStorageChange as EventListener);
+    return () => window.removeEventListener("local-storage", handleStorageChange as EventListener);
+  }, [key]);
+
   const setValue = (value: T | ((val: T) => T)) => {
     try {
       const valueToStore = value instanceof Function ? value(storedValue) : value;
       setStoredValue(valueToStore);
       window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      window.dispatchEvent(new CustomEvent("local-storage", { detail: { key, value: valueToStore } }));
     } catch (error) {
       console.log(error);
     }
@@ -576,18 +589,46 @@ const ExportDataModal = ({ onClose }: { onClose: () => void }) => {
       if (current >= 100) {
         clearInterval(interval);
         setDone(true);
-        const element = document.createElement("a");
-        const file = new Blob([JSON.stringify({
-          patient: "Adnan Uddin",
-          bloodType: "B+",
-          sensorSN: "CS-2026-DK-00142",
-          vitals: { restingHR: "58-74", established: "12 Feb 2026" }
-        }, null, 2)], { type: 'text/plain' });
-        element.href = URL.createObjectURL(file);
-        element.download = "cardishirt_health_data.json";
-        document.body.appendChild(element);
-        element.click();
-        document.body.removeChild(element);
+        try {
+          const doc = new jsPDF();
+          doc.setFontSize(22);
+          doc.setTextColor(232, 48, 74); // CardiShirt Red
+          doc.text("CardiShirt Clinical Profile", 20, 20);
+          
+          doc.setFontSize(14);
+          doc.setTextColor(40, 40, 40);
+          doc.text("Patient Information:", 20, 35);
+          doc.setFontSize(12);
+          doc.setTextColor(80, 80, 80);
+          doc.text("Name: Adnan Uddin", 25, 45);
+          doc.text("Blood Type: B+", 25, 52);
+          doc.text("Sensor SN: CS-2026-DK-00142", 25, 59);
+          
+          doc.setFontSize(14);
+          doc.setTextColor(40, 40, 40);
+          doc.text("Vitals Baseline:", 20, 74);
+          doc.setFontSize(12);
+          doc.setTextColor(80, 80, 80);
+          doc.text("Resting HR: 58-74 BPM", 25, 84);
+          doc.text("Baseline Established: 12 Feb 2026", 25, 91);
+          
+          doc.setFontSize(14);
+          doc.setTextColor(40, 40, 40);
+          doc.text("Recent Clinical Activity:", 20, 106);
+          doc.setFontSize(12);
+          doc.setTextColor(80, 80, 80);
+          doc.text("- AI summary generated (Today 1:15 PM)", 25, 116);
+          doc.text("- 14-day tracking streak achieved (Yesterday)", 25, 123);
+          doc.text("- New 3-lead ECG recorded (Mon 9:15 AM)", 25, 130);
+          
+          doc.setFontSize(10);
+          doc.setTextColor(150, 150, 150);
+          doc.text("Generated on: " + new Date().toLocaleString(), 20, 280);
+          
+          doc.save("cardishirt_health_data.pdf");
+        } catch (e) {
+          console.error("PDF Export failed:", e);
+        }
       }
     }, 100);
     return () => clearInterval(interval);
@@ -613,7 +654,7 @@ const ExportDataModal = ({ onClose }: { onClose: () => void }) => {
             <CheckCircle size={48} style={{ color: c.green }} />
           </div>
           <div className="font-semibold text-lg" style={{ color: c.text }}>Export Complete</div>
-          <p style={{ color: c.secondary, fontSize: 13 }}>Your file <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">cardishirt_health_data.json</code> has been generated and downloaded successfully.</p>
+          <p style={{ color: c.secondary, fontSize: 13 }}>Your file <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">cardishirt_health_data.pdf</code> has been generated and downloaded successfully.</p>
           <div className="flex justify-center gap-2 mt-4">
             <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
               Done

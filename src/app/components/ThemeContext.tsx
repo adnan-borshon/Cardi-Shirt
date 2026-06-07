@@ -16,6 +16,40 @@ const ThemeContext = createContext<ThemeContextType>({
   t: (d) => d,
 });
 
+export function useSharedLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: T) => T)) => void] {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.log(error);
+      return initialValue;
+    }
+  });
+
+  useEffect(() => {
+    const handleStorageChange = (e: CustomEvent) => {
+      if (e.detail.key === key) {
+        setStoredValue(e.detail.value);
+      }
+    };
+    window.addEventListener("local-storage", handleStorageChange as EventListener);
+    return () => window.removeEventListener("local-storage", handleStorageChange as EventListener);
+  }, [key]);
+
+  const setValue = (value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      window.dispatchEvent(new CustomEvent("local-storage", { detail: { key, value: valueToStore } }));
+    } catch (error) {
+      console.log(error);
+    }
+  };
+  return [storedValue, setValue];
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window !== "undefined") {

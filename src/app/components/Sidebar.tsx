@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Activity, BookOpen, TrendingUp, Settings, Users, Pill,
   Signal, BatteryMedium, ChevronLeft, ChevronRight, Palette
 } from "lucide-react";
-import { useTheme, useTokens } from "./ThemeContext";
+import { useTheme, useTokens, useSharedLocalStorage } from "./ThemeContext";
 import { useLiveVitals } from "./useBackend";
 
 const navItems = [
@@ -26,6 +26,11 @@ export function Sidebar({}: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { connected, vitals } = useLiveVitals();
+  
+  const [firstName] = useSharedLocalStorage("cs_first_name", "Adnan");
+  const [lastName] = useSharedLocalStorage("cs_last_name", "Uddin");
+  const [avatarInitials] = useSharedLocalStorage("cs_avatar_initials", "AU");
+  const [avatarBgColor] = useSharedLocalStorage("cs_avatar_bgcolor", "#5B8AF0");
 
   return (
     <aside
@@ -129,10 +134,10 @@ export function Sidebar({}: SidebarProps) {
 
       {/* Patient */}
       <div className="px-3 py-3 flex items-center gap-3 relative cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ borderTop: `0.5px solid ${tk.cardBorder}` }} onClick={() => setProfileModalOpen(!profileModalOpen)}>
-        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>RK</div>
+        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: avatarBgColor, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>{avatarInitials}</div>
         {!collapsed && (
           <div>
-            <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Adnan</div>
+            <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>{firstName}</div>
             <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(39,194,138,0.15)", color: "#27C28A", fontSize: 9, fontFamily: "DM Mono, monospace" }}>Low Risk</span>
           </div>
         )}
@@ -145,7 +150,7 @@ export function Sidebar({}: SidebarProps) {
             onClick={(e) => e.stopPropagation()}
           >
              <div className="p-3 border-b" style={{ borderColor: tk.cardBorder }}>
-               <div style={{ color: tk.textPrimary, fontSize: 14, fontWeight: 'bold', fontFamily: "Syne, sans-serif" }}>Adnan RK</div>
+               <div style={{ color: tk.textPrimary, fontSize: 14, fontWeight: 'bold', fontFamily: "Syne, sans-serif" }}>{firstName} {lastName}</div>
                <div style={{ color: tk.textSecondary, fontSize: 12, fontFamily: "DM Mono, monospace" }}>Patient ID: 9821</div>
              </div>
              <button onClick={() => { setProfileModalOpen(false); navigate('/settings'); }} className="w-full text-left px-3 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2" style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif" }}>
