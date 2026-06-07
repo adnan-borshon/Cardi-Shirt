@@ -11,11 +11,23 @@ const questions = [
 
 export function DailyCheckIn() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [dismissed, setDismissed] = useState(false);
+  
+  // Date logic to only show once per day
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [lastCheckInDate, setLastCheckInDate] = useState(() => {
+    try { return localStorage.getItem("cs_last_checkin_date") || ""; } catch { return ""; }
+  });
+  
+  const [dismissed, setDismissed] = useState(lastCheckInDate === todayStr);
   const tk = useTokens();
 
   const allAnswered = Object.keys(answers).length === questions.length;
   if (dismissed) return null;
+
+  const handleComplete = () => {
+    try { localStorage.setItem("cs_last_checkin_date", todayStr); } catch {}
+    setTimeout(() => setDismissed(true), 2000);
+  };
 
   return (
     <AnimatePresence>
@@ -41,7 +53,7 @@ export function DailyCheckIn() {
                   {!answers[q.id] && (
                     <div className="flex gap-2">
                       {q.options.map((opt) => (
-                        <button key={opt} className="px-3 py-1.5 rounded-lg transition-colors" style={{ background: tk.chipBg, color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 12, border: `0.5px solid ${tk.cardBorder}` }} onClick={() => setAnswers({ ...answers, [q.id]: opt })}>
+                        <button key={opt} className="px-3 py-1.5 rounded-lg transition-colors cursor-pointer active:scale-95 hover:opacity-80" style={{ background: tk.chipBg, color: tk.textPrimary, fontFamily: "DM Mono, monospace", fontSize: 12, border: `0.5px solid ${tk.cardBorder}` }} onClick={() => setAnswers({ ...answers, [q.id]: opt })}>
                           {opt}
                         </button>
                       ))}
@@ -52,7 +64,7 @@ export function DailyCheckIn() {
             </div>
           </>
         ) : (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2" onAnimationComplete={() => setTimeout(() => setDismissed(true), 2000)}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2" onAnimationComplete={handleComplete}>
             <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(39,194,138,0.2)" }}>
               <Check size={14} style={{ color: "#27C28A" }} />
             </div>
