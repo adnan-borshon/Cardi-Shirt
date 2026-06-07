@@ -86,7 +86,7 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
   };
 
   return (
-    <div className={`flex flex-col ${isMobile ? "h-[500px]" : "h-full"}`} style={{ background: tk.cardBg }}>
+    <div className="flex flex-col flex-1 h-full w-full" style={{ background: tk.cardBg }}>
       {/* Header */}
       <div className="px-4 py-3 flex-shrink-0" style={{ borderBottom: `0.5px solid ${tk.cardBorder}` }}>
         <div className="flex items-center justify-between mb-1">
@@ -108,7 +108,7 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-500/30 hover:scrollbar-thumb-zinc-500/50 scrollbar-track-transparent px-4 py-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto chat-scrollbar px-4 py-3 space-y-3">
         {messages.map((msg) => (
           <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`flex ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
             <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5" style={{ background: msg.from === "user" ? tk.bubbleUser : tk.bubbleAI, border: msg.from === "ai" ? `0.5px solid ${tk.borderSubtle}` : "none" }}>
@@ -149,7 +149,7 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       {/* Quick prompts */}
-      <div className="px-4 py-2 flex gap-2 overflow-x-auto scrollbar-none flex-shrink-0">
+      <div className="px-4 py-2 flex gap-2 overflow-x-auto hide-scrollbar flex-shrink-0">
         {quickPrompts.map((p) => (
           <button key={p} className="px-3 py-1.5 rounded-full whitespace-nowrap transition-colors" style={{ background: tk.chipBg, color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 11, border: `0.5px solid ${tk.cardBorder}` }} onClick={() => sendMessage(p)}>
             {p}
