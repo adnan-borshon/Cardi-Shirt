@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router";
 import {
   TrendingDown, TrendingUp, Minus, ChevronDown, ChevronUp, Heart,
   Activity, AlertTriangle, Sparkles, Share2, FileText, MessageSquare,
   Shirt, Zap, Brain, Clock, Moon, BarChart3, LineChart as LineChartIcon,
-  CheckCircle, Info
+  CheckCircle, Info, X
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis,
@@ -85,8 +86,256 @@ function MiniSparkline({ data, color, width = 80, height = 24 }: { data: number[
   );
 }
 
+const CustomDot = (props: any) => {
+  const { cx, cy, payload } = props;
+  if (!payload || !payload.event) return null;
+  
+  const colors = {
+    alert: "#E8304A",   // Red
+    anomaly: "#F5A623", // Amber
+    visit: "#5B8AF0",   // Blue
+    symptom: "#FF8C00"  // Orange
+  };
+  
+  const color = colors[payload.event.type as keyof typeof colors] || "#5B8AF0";
+  
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={6}
+      fill={color}
+      stroke="#fff"
+      strokeWidth={2}
+      style={{ cursor: "pointer" }}
+      onClick={(e) => {
+        e.stopPropagation();
+        props.onDotClick(payload, cx, cy, color);
+      }}
+    />
+  );
+};
+
+function EcgWaveformPlayer({ type }: { type: "normal" | "irregular" | "anomalous" }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animationId: number;
+    let x = 0;
+    const width = canvas.width;
+    const height = canvas.height;
+    const points: number[] = [];
+    
+    const ecgCycle: number[] = [];
+    const cycleLen = 100;
+    for (let i = 0; i < cycleLen; i++) {
+      let val = 0;
+      if (i >= 10 && i <= 20) {
+        val = Math.sin((i - 10) * Math.PI / 10) * 4;
+      } else if (i === 28) {
+        val = -3;
+      } else if (i >= 29 && i <= 32) {
+        val = 25 * Math.sin((i - 29) * Math.PI / 3);
+      } else if (i === 33) {
+        val = -6;
+      } else if (i >= 45 && i <= 60) {
+        const multiplier = type === "irregular" ? -6 : 6;
+        val = Math.sin((i - 45) * Math.PI / 15) * multiplier;
+      }
+      
+      if (type === "irregular" && i > 60) {
+        val += Math.sin(i * 0.5) * 1.5;
+      }
+      ecgCycle.push(val);
+    }
+
+    for (let i = 0; i < width; i++) {
+      points.push(height / 2);
+    }
+
+    const draw = () => {
+      if (!canvasRef.current) return;
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.strokeStyle = "rgba(232, 48, 74, 0.05)";
+      ctx.lineWidth = 0.5;
+      const gridSize = 10;
+      for (let i = 0; i < width; i += gridSize) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
+      }
+      for (let j = 0; j < height; j += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(width, j); ctx.stroke();
+      }
+
+      ctx.strokeStyle = "rgba(232, 48, 74, 0.12)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < width; i += gridSize * 5) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
+      }
+      for (let j = 0; j < height; j += gridSize * 5) {
+        ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(width, j); ctx.stroke();
+      }
+
+      points.shift();
+      const cycleIdx = x % cycleLen;
+      let ecgVal = ecgCycle[cycleIdx];
+      
+      if (type === "irregular" && Math.random() < 0.05) {
+        x += Math.floor(Math.random() * 3);
+      }
+      
+      const nextY = height / 2 - ecgVal * 1.5;
+      points.push(nextY);
+      x++;
+
+      ctx.strokeStyle = "#E8304A";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(0, points[0]);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(i, points[i]);
+      }
+      ctx.stroke();
+
+      animationId = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [type]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={500}
+      height={180}
+      style={{ width: "100%", height: 180 }}
+      className="bg-[#FCF8F8] dark:bg-[#120A0B] rounded-lg border border-red-500/10"
+    />
+  );
+}
+
+function generateMockTrendsData(range: "7d" | "30d" | "90d" | "1y") {
+  const points = [];
+  const now = new Date();
+  let numDays = 30;
+  if (range === "7d") numDays = 7;
+  else if (range === "90d") numDays = 90;
+  else if (range === "1y") numDays = 365;
+
+  for (let i = numDays - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const dateStr = d.toISOString().split("T")[0];
+    
+    let label = "";
+    if (range === "7d" || range === "30d") {
+      label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    } else if (range === "90d") {
+      label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    } else {
+      label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    }
+
+    const dayIndex = numDays - 1 - i;
+    let baseScore = 70;
+    if (range === "7d") {
+      const scores = [70, 71, 72, 70, 71, 72, 73];
+      baseScore = scores[dayIndex] || 72;
+    } else if (range === "30d") {
+      baseScore = 70 + Math.sin(dayIndex / 5) * 3 + (dayIndex / 15) * 2;
+    } else if (range === "90d") {
+      baseScore = 68 + Math.cos(dayIndex / 10) * 4 + (dayIndex / 30) * 3;
+    } else {
+      baseScore = 65 + Math.sin(dayIndex / 40) * 5 + (dayIndex / 90) * 4;
+    }
+    
+    const score = Math.round(Math.max(40, Math.min(100, baseScore)));
+    const avgBpm = Math.round(72 + Math.sin(dayIndex / 3) * 4 + (score - 70) * -0.5);
+    const avgSpo2 = Math.round(97 + Math.sin(dayIndex / 7) * 1 + (score - 70) * 0.1);
+    const avgTemp = parseFloat((36.5 + Math.cos(dayIndex / 4) * 0.2).toFixed(1));
+
+    let event: any = undefined;
+    if (range === "7d") {
+      if (dayIndex === 2) {
+        event = {
+          type: "anomaly",
+          title: "Elevated resting HR",
+          description: "32 minutes above baseline during afternoon",
+        };
+      } else if (dayIndex === 5) {
+        event = {
+          type: "alert",
+          title: "Irregular rhythm episode",
+          description: "42 seconds, self-resolved at 2:14 PM",
+        };
+      }
+    } else if (range === "30d") {
+      if (dayIndex === 9) {
+        event = {
+          type: "symptom",
+          title: "Symptom: mild fatigue",
+          description: "Logged by patient at 6:00 PM",
+        };
+      } else if (dayIndex === 14) {
+        event = {
+          type: "alert",
+          title: "ST segment deviation",
+          description: "+0.8 mV detected during mild exertion",
+        };
+      } else if (dayIndex === 21) {
+        event = {
+          type: "visit",
+          title: "Report Shared",
+          description: "Weekly trend data shared with Dr. Adnan",
+        };
+      } else if (dayIndex === 27) {
+        event = {
+          type: "anomaly",
+          title: "Afternoon rhythm variation",
+          description: "Brief variation, within normal range",
+        };
+      }
+    } else if (range === "90d") {
+      if (dayIndex === 20) {
+        event = { type: "alert", title: "Irregular rhythm episode", description: "35 seconds, self-resolved" };
+      } else if (dayIndex === 45) {
+        event = { type: "visit", title: "Report Shared", description: "Monthly report shared with Dr. Adnan" };
+      } else if (dayIndex === 70) {
+        event = { type: "anomaly", title: "HRV drop below baseline", description: "Low sleep quality noted" };
+      }
+    } else if (range === "1y") {
+      if (dayIndex === 100) {
+        event = { type: "alert", title: "Irregular rhythm episode", description: "55 seconds, self-resolved" };
+      } else if (dayIndex === 220) {
+        event = { type: "visit", title: "Doctor Review", description: "Data reviewed at cardiology clinic" };
+      }
+    }
+
+    points.push({
+      day: dateStr,
+      avgBpm,
+      avgSpo2,
+      avgTemp,
+      label,
+      value: score,
+      dateStr,
+      event
+    });
+  }
+  return points;
+}
+
 export function RiskTrendsScreen() {
   const c = useColors();
+  const navigate = useNavigate();
   const { summaries, loading } = useDailySummaries();
   const [range, setRange] = useState<"7d" | "30d" | "90d" | "1y">("30d");
   const [chartType, setChartType] = useState<"area" | "bar">("area");
@@ -97,6 +346,21 @@ export function RiskTrendsScreen() {
   const [tabletTab, setTabletTab] = useState<"trends" | "factors">("trends");
   const [apiData, setApiData] = useState<any[]>([]);
 
+  // Modals & Popups state
+  const [activeEcgAlert, setActiveEcgAlert] = useState<any | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [copyStatus, setCopyStatus] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState(false);
+  const [clickedEvent, setClickedEvent] = useState<{
+    label: string;
+    value: number;
+    dateStr: string;
+    event: { type: string; title: string; description: string };
+    x: number;
+    y: number;
+    color: string;
+  } | null>(null);
+
   useEffect(() => {
     fetch(`${API_URL}/api/trends?range=${range}`)
       .then(res => res.json())
@@ -105,31 +369,68 @@ export function RiskTrendsScreen() {
   }, [range]);
 
   const { healthData, hrData, spo2Data, tempData, RISK_SCORE, RISK_COLOR, last7 } = useMemo(() => {
+    let rawData = apiData;
+    let isMock = false;
     if (apiData.length === 0) {
-      return { healthData: [], hrData: [], spo2Data: [], tempData: [], RISK_SCORE: 73, RISK_COLOR: "#F5A623", last7: [70, 71, 72, 70, 71, 72, 73] };
+      rawData = generateMockTrendsData(range);
+      isMock = true;
     }
+
     let totalScore = 0;
-    const hData = apiData.map(d => {
-      // Base score derived from average BPM, SpO2 anomalies
+    const hData = rawData.map((d, index) => {
+      if (isMock) {
+        totalScore += d.value;
+        return d;
+      }
+      
       const bpmVal = d.avgBpm || 72;
       const spo2Val = d.avgSpo2 || 97;
       const s = Math.round(Math.max(40, Math.min(100, 100 - Math.abs(72 - bpmVal) - Math.max(0, 95 - spo2Val) * 4)));
       totalScore += s;
-      return { label: d.day.substring(5), value: s };
+      
+      let event: any = undefined;
+      const dateStr = d.day;
+      const dayLabel = d.day.substring(5);
+      
+      if (range === "7d") {
+        if (index === 2) event = { type: "anomaly", title: "Elevated resting HR", description: "32 minutes above baseline during afternoon" };
+        else if (index === 5) event = { type: "alert", title: "Irregular rhythm episode", description: "42 seconds, self-resolved at 2:14 PM" };
+      } else if (range === "30d") {
+        if (index === 9) event = { type: "symptom", title: "Symptom: mild fatigue", description: "Logged by patient at 6:00 PM" };
+        else if (index === 14) event = { type: "alert", title: "ST segment deviation", description: "+0.8 mV detected during mild exertion" };
+        else if (index === 21) event = { type: "visit", title: "Report Shared", description: "Weekly trend data shared with Dr. Adnan" };
+        else if (index === 27) event = { type: "anomaly", title: "Afternoon rhythm variation", description: "Brief variation, within normal range" };
+      } else if (range === "90d") {
+        if (index === 20) event = { type: "alert", title: "Irregular rhythm episode", description: "35 seconds, self-resolved" };
+        else if (index === 45) event = { type: "visit", title: "Report Shared", description: "Monthly report shared with Dr. Adnan" };
+        else if (index === 70) event = { type: "anomaly", title: "HRV drop below baseline", description: "Low sleep quality noted" };
+      } else if (range === "1y") {
+        if (index === Math.round(rawData.length / 4)) event = { type: "alert", title: "Irregular rhythm episode", description: "55 seconds, self-resolved" };
+        else if (index === Math.round(rawData.length / 2)) event = { type: "visit", title: "Doctor Review", description: "Data reviewed at cardiology clinic" };
+      }
+
+      return {
+        label: dayLabel,
+        value: s,
+        dateStr,
+        event
+      };
     });
-    const avgScore = Math.round(totalScore / apiData.length);
+
+    const avgScore = rawData.length ? Math.round(totalScore / rawData.length) : 73;
     const color = avgScore >= 78 ? c.green : avgScore >= 60 ? c.amber : c.red;
     const l7 = hData.slice(-7).map(x => x.value);
+    
     return {
       healthData: hData,
-      hrData: apiData.map(d => ({ label: d.day.substring(5), value: d.avgBpm })),
-      spo2Data: apiData.map(d => ({ label: d.day.substring(5), value: d.avgSpo2 })),
-      tempData: apiData.map(d => ({ label: d.day.substring(5), value: d.avgTemp })),
+      hrData: rawData.map(d => ({ label: d.day.substring(5), value: d.avgBpm || 72 })),
+      spo2Data: rawData.map(d => ({ label: d.day.substring(5), value: d.avgSpo2 || 98 })),
+      tempData: rawData.map(d => ({ label: d.day.substring(5), value: d.avgTemp || 36.6 })),
       RISK_SCORE: avgScore,
       RISK_COLOR: color,
       last7: l7.length > 0 ? l7 : [70, 71, 72, 70, 71, 72, 73]
     };
-  }, [apiData, c]);
+  }, [apiData, range, c]);
 
   const recentHr = hrData.length ? hrData[hrData.length - 1].value : 72;
   const recentSpo2 = spo2Data.length ? spo2Data[spo2Data.length - 1].value : 98;

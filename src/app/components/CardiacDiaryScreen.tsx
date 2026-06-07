@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Flame, Trophy,
   Heart, Shirt, User, Sparkles, Edit3, Pill, AlertTriangle,
@@ -64,20 +64,6 @@ const hrData = Array.from({ length: 24 }, (_, h) => ({
   worn: !(h >= 0 && h <= 3),
 }));
 
-const events = [
-  { time: "7:14 AM", icon: Shirt, color: "#9AA0B8", text: L.evtShirtConnected, action: L.evtViewDetails, type: "device" as const },
-  { time: "8:30 AM", icon: User, color: "#5B8AF0", text: L.evtCheckin, action: L.evtEditNote, type: "patient" as const },
-  { time: "9:00 AM", icon: Pill, color: "#5B8AF0", text: L.evtMedLogged, action: L.evtEditNote, type: "patient" as const },
-  { time: "11:45 AM", icon: Wind, color: "#27C28A", text: L.evtBreathingNormal, action: L.evtView, type: "cardiac" as const },
-  { time: "1:30 PM", icon: Gauge, color: "#F5A623", text: L.evtStrainElevated, action: L.evtView, type: "cardiac" as const },
-  { time: "2:15 PM", icon: Heart, color: "#E8304A", text: L.evtIrregular, action: L.evtViewECG, type: "cardiac" as const },
-  { time: "2:18 PM", icon: TrendingDown, color: "#E8304A", text: L.evtTWaveInversion, action: L.evtViewECG, type: "cardiac" as const },
-  { time: "2:22 PM", icon: TrendingUp, color: "#E8304A", text: L.evtSTDeviation, action: L.evtViewECG, type: "cardiac" as const },
-  { time: "3:15 PM", icon: Brain, color: "#27C28A", text: L.evtStressLow, action: L.evtView, type: "cardiac" as const },
-  { time: "3:42 PM", icon: Sparkles, color: "#F5A623", text: L.evtAISummary, action: L.evtView, type: "cardiac" as const },
-  { time: "6:00 PM", icon: User, color: "#5B8AF0", text: L.evtFatigue, action: L.evtEditNote, type: "patient" as const },
-];
-
 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const dayHeaders = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -87,10 +73,125 @@ function getHealthColor(score: number): string {
   return "#E8304A";
 }
 
-// Convert Sunday-start to Monday-start
 function getMondayStart(year: number, month: number): number {
   const day = new Date(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1;
+}
+
+function EventIcon({ name, color }: { name: string; color: string }) {
+  const icons: Record<string, any> = {
+    ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Flame, Trophy, Heart, Shirt, User, Sparkles, Edit3, Pill, AlertTriangle,
+    CheckCircle, ArrowLeft, ArrowRight, Plus, Trash2, X, Check, Clock, Wind, Gauge, Brain, TrendingUp, TrendingDown
+  };
+  const IconComponent = icons[name] || AlertTriangle;
+  return <IconComponent size={16} style={{ color, flexShrink: 0 }} />;
+}
+
+function EcgWaveformPlayer({ type }: { type: "normal" | "irregular" | "anomalous" }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animationId: number;
+    let x = 0;
+    const width = canvas.width;
+    const height = canvas.height;
+    const points: number[] = [];
+    
+    const ecgCycle: number[] = [];
+    const cycleLen = 100;
+    for (let i = 0; i < cycleLen; i++) {
+      let val = 0;
+      if (i >= 10 && i <= 20) {
+        val = Math.sin((i - 10) * Math.PI / 10) * 4;
+      } else if (i === 28) {
+        val = -3;
+      } else if (i >= 29 && i <= 32) {
+        val = 25 * Math.sin((i - 29) * Math.PI / 3);
+      } else if (i === 33) {
+        val = -6;
+      } else if (i >= 45 && i <= 60) {
+        const multiplier = type === "irregular" ? -6 : 6;
+        val = Math.sin((i - 45) * Math.PI / 15) * multiplier;
+      }
+      
+      if (type === "irregular" && i > 60) {
+        val += Math.sin(i * 0.5) * 1.5;
+      }
+      ecgCycle.push(val);
+    }
+
+    for (let i = 0; i < width; i++) {
+      points.push(height / 2);
+    }
+
+    const draw = () => {
+      if (!canvasRef.current) return;
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.strokeStyle = "rgba(232, 48, 74, 0.05)";
+      ctx.lineWidth = 0.5;
+      const gridSize = 10;
+      for (let i = 0; i < width; i += gridSize) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
+      }
+      for (let j = 0; j < height; j += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(width, j); ctx.stroke();
+      }
+
+      ctx.strokeStyle = "rgba(232, 48, 74, 0.12)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < width; i += gridSize * 5) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
+      }
+      for (let j = 0; j < height; j += gridSize * 5) {
+        ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(width, j); ctx.stroke();
+      }
+
+      points.shift();
+      const cycleIdx = x % cycleLen;
+      let ecgVal = ecgCycle[cycleIdx];
+      
+      if (type === "irregular" && Math.random() < 0.05) {
+        x += Math.floor(Math.random() * 3);
+      }
+      
+      const nextY = height / 2 - ecgVal * 1.5;
+      points.push(nextY);
+      x++;
+
+      ctx.strokeStyle = "#E8304A";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(0, points[0]);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(i, points[i]);
+      }
+      ctx.stroke();
+
+      animationId = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [type]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={500}
+      height={180}
+      style={{ width: "100%", height: 180 }}
+      className="bg-[#FCF8F8] dark:bg-[#120A0B] rounded-lg border border-red-500/10"
+    />
+  );
 }
 
 export function CardiacDiaryScreen() {
@@ -124,11 +225,60 @@ export function CardiacDiaryScreen() {
   const [selectedDay, setSelectedDay] = useState(today.getDate());
   const [notesOpen, setNotesOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [noteSaved, setNoteSaved] = useState(false);
   const [showDeviceEvents, setShowDeviceEvents] = useState(false);
   const [hrvExplainOpen, setHrvExplainOpen] = useState(false);
   const [apiData, setApiData] = useState<any[]>([]);
 
-  // Fetch real database records from the backend
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const dateParam = params.get("date");
+    if (dateParam) {
+      const parts = dateParam.split("-");
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          setCurrentYear(y);
+          setCurrentMonth(m);
+          setSelectedDay(d);
+        }
+      }
+    }
+  }, []);
+
+  const selectedDateStr = useMemo(() => {
+    return `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
+  }, [currentYear, currentMonth, selectedDay]);
+
+  const [notesByDate, setNotesByDate] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem("cardishirt_diary_notes");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cardishirt_diary_notes", JSON.stringify(notesByDate));
+  }, [notesByDate]);
+
+  useEffect(() => {
+    setNoteText(notesByDate[selectedDateStr] || "");
+    setNoteSaved(false);
+  }, [selectedDateStr, notesByDate]);
+
+  const saveNote = () => {
+    setNotesByDate(prev => ({
+      ...prev,
+      [selectedDateStr]: noteText
+    }));
+    setNoteSaved(true);
+    setTimeout(() => setNoteSaved(false), 2000);
+  };
+
   useEffect(() => {
     fetch(`${API_URL}/api/diary/summary`)
       .then((r) => r.json())
@@ -136,13 +286,12 @@ export function CardiacDiaryScreen() {
       .catch((e) => console.error("Error loading diary summaries:", e));
   }, []);
 
-  // Medication Log state
   type MedSlot = "morning" | "noon" | "evening";
-  interface MedEntry { id: string; name: string; dosage: string; time: string; slots: Record<MedSlot, boolean>; }
+  interface MedEntry { id: string; name: string; dosage: string; time: string; }
   const [medications, setMedications] = useState<MedEntry[]>([
-    { id: "m1", name: "Metoprolol", dosage: "25mg", time: "8:00 AM", slots: { morning: true, noon: false, evening: false } },
-    { id: "m2", name: "Aspirin", dosage: "75mg", time: "8:00 AM", slots: { morning: true, noon: false, evening: false } },
-    { id: "m3", name: "Atorvastatin", dosage: "10mg", time: "9:00 PM", slots: { morning: false, noon: false, evening: true } },
+    { id: "m1", name: "Metoprolol", dosage: "25mg", time: "8:00 AM" },
+    { id: "m2", name: "Aspirin", dosage: "75mg", time: "8:00 AM" },
+    { id: "m3", name: "Atorvastatin", dosage: "10mg", time: "9:00 PM" },
   ]);
   const [medEditMode, setMedEditMode] = useState(false);
   const [editingMedId, setEditingMedId] = useState<string | null>(null);
@@ -154,12 +303,43 @@ export function CardiacDiaryScreen() {
   const [editMedDosage, setEditMedDosage] = useState("");
   const [editMedTime, setEditMedTime] = useState("");
 
+  const [medAdherenceByDate, setMedAdherenceByDate] = useState<Record<string, Record<string, Record<MedSlot, boolean>>>>(() => {
+    try {
+      const saved = localStorage.getItem("cardishirt_diary_meds");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cardishirt_diary_meds", JSON.stringify(medAdherenceByDate));
+  }, [medAdherenceByDate]);
+
   const toggleMedSlot = (id: string, slot: MedSlot) => {
-    setMedications(prev => prev.map(m => m.id === id ? { ...m, slots: { ...m.slots, [slot]: !m.slots[slot] } } : m));
+    setMedAdherenceByDate(prev => {
+      const dayAdherence = prev[selectedDateStr] || {};
+      const medAdherence = dayAdherence[id] || { morning: false, noon: false, evening: false };
+      return {
+        ...prev,
+        [selectedDateStr]: {
+          ...dayAdherence,
+          [id]: {
+            ...medAdherence,
+            [slot]: !medAdherence[slot]
+          }
+        }
+      };
+    });
   };
+
+  const isSlotChecked = (medId: string, slot: MedSlot) => {
+    return medAdherenceByDate[selectedDateStr]?.[medId]?.[slot] || false;
+  };
+
   const addMedication = () => {
     if (!newMedName.trim()) return;
-    setMedications(prev => [...prev, { id: `m${Date.now()}`, name: newMedName.trim(), dosage: newMedDosage.trim() || "—", time: newMedTime, slots: { morning: false, noon: false, evening: false } }]);
+    setMedications(prev => [...prev, { id: `m${Date.now()}`, name: newMedName.trim(), dosage: newMedDosage.trim() || "—", time: newMedTime }]);
     setNewMedName(""); setNewMedDosage(""); setNewMedTime("8:00 AM"); setShowAddMed(false);
   };
   const deleteMedication = (id: string) => setMedications(prev => prev.filter(m => m.id !== id));
@@ -170,6 +350,114 @@ export function CardiacDiaryScreen() {
     if (!editingMedId) return;
     setMedications(prev => prev.map(m => m.id === editingMedId ? { ...m, name: editMedName, dosage: editMedDosage, time: editMedTime } : m));
     setEditingMedId(null);
+  };
+
+  // Custom events persistent state
+  const [customEventsByDate, setCustomEventsByDate] = useState<Record<string, Array<{
+    id: string;
+    time: string;
+    iconName: string;
+    color: string;
+    text: string;
+    action: string;
+    type: "patient" | "device" | "cardiac";
+    isCustom?: boolean;
+  }>>> (() => {
+    try {
+      const saved = localStorage.getItem("cardishirt_diary_events");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cardishirt_diary_events", JSON.stringify(customEventsByDate));
+  }, [customEventsByDate]);
+
+  // Dialog / Modal state variables
+  const [symptomModalOpen, setSymptomModalOpen] = useState(false);
+  const [symptomName, setSymptomName] = useState("");
+  const [symptomTime, setSymptomTime] = useState("");
+  const [symptomNotes, setSymptomNotes] = useState("");
+
+  const [selectedEventDetails, setSelectedEventDetails] = useState<any>(null);
+  const [ecgPlayerOpen, setEcgPlayerOpen] = useState(false);
+  const [ecgPlayerType, setEcgPlayerType] = useState<"normal" | "irregular" | "anomalous">("normal");
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+
+  const openSymptomModal = () => {
+    const now = new Date();
+    let hours = now.getHours();
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    setSymptomName("");
+    setSymptomTime(`${hours}:${minutes} ${ampm}`);
+    setSymptomNotes("");
+    setSymptomModalOpen(true);
+  };
+
+  const logSymptom = (name: string, time: string, notes: string) => {
+    const newEvent = {
+      id: `symptom-${Date.now()}`,
+      time,
+      iconName: "AlertTriangle",
+      color: "#F5A623",
+      text: `Symptom logged: ${name}${notes ? ` (${notes})` : ""}`,
+      action: "Edit note",
+      type: "patient" as const,
+      isCustom: true
+    };
+    
+    setCustomEventsByDate(prev => {
+      const list = prev[selectedDateStr] || [];
+      return {
+        ...prev,
+        [selectedDateStr]: [...list, newEvent]
+      };
+    });
+  };
+
+  const handleSaveSymptom = () => {
+    if (!symptomName.trim()) return;
+    logSymptom(symptomName, symptomTime, symptomNotes);
+    setSymptomModalOpen(false);
+  };
+
+  const deleteCustomEvent = (eventId: string) => {
+    setCustomEventsByDate(prev => {
+      const list = prev[selectedDateStr] || [];
+      return {
+        ...prev,
+        [selectedDateStr]: list.filter(e => e.id !== eventId)
+      };
+    });
+  };
+
+  const handleActionClick = (event: any) => {
+    if (event.action === L.evtViewECG) {
+      if (event.text.toLowerCase().includes("irregular") || event.text.toLowerCase().includes("t wave") || event.text.toLowerCase().includes("st deviation")) {
+        setEcgPlayerType("irregular");
+      } else {
+        setEcgPlayerType("normal");
+      }
+      setSelectedEventDetails(event);
+      setEcgPlayerOpen(true);
+    } else if (event.action === L.evtEditNote) {
+      setNotesOpen(true);
+      setTimeout(() => {
+        const textarea = document.getElementById("daily-note-textarea");
+        if (textarea) {
+          textarea.focus();
+          textarea.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
+    } else if (event.action === L.evtViewDetails || event.action === L.evtView) {
+      setSelectedEventDetails(event);
+      setDetailsModalOpen(true);
+    }
   };
 
   // Compile calendar: merge SQLite server data and fallback mockup generator
@@ -186,6 +474,7 @@ export function CardiacDiaryScreen() {
       
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayRec = apiData.find((x) => x.day === dateStr);
+      const hasCustomSymptom = customEventsByDate[dateStr]?.some(e => e.type === "patient" && e.text.toLowerCase().includes("symptom")) || false;
 
       if (dayRec) {
         // Real active database record present
@@ -196,7 +485,7 @@ export function CardiacDiaryScreen() {
           wearHours: 24,
           wearMinutes: 0,
           hasAlert: dayRec.avgBpm > 100 || dayRec.avgSpo2 < 90,
-          hasSymptom: false,
+          hasSymptom: hasCustomSymptom,
           avgBpm: dayRec.avgBpm,
           avgTemp: dayRec.avgTemp,
           avgSpo2: dayRec.avgSpo2
@@ -213,12 +502,12 @@ export function CardiacDiaryScreen() {
           wearHours: wearing === "full" ? 8 + (seed % 4) : wearing === "partial" ? 3 + (seed % 4) : 0,
           wearMinutes: wearing === "none" ? 0 : (seed * 7) % 60,
           hasAlert: d === 3 || d === 15,
-          hasSymptom: d === 10 || d === 25,
+          hasSymptom: d === 10 || d === 25 || hasCustomSymptom,
         });
       }
     }
     return data;
-  }, [currentYear, currentMonth, apiData]);
+  }, [currentYear, currentMonth, apiData, customEventsByDate]);
 
   const selected = monthData.find((dd) => dd.day === selectedDay);
 
@@ -256,10 +545,49 @@ export function CardiacDiaryScreen() {
     }
   };
 
-  // Cardiac events timeline filters
-  const cardiacEvents = events.filter((e) => e.type !== "device");
-  const deviceEvents = events.filter((e) => e.type === "device");
+  // Compile timeline events per-day dynamically
+  const dayEvents = useMemo(() => {
+    const isWorn = selected && selected.wearing !== "none";
+    let baseEvents = isWorn ? [
+      { id: "e1", time: "7:14 AM", iconName: "Shirt", color: "#9AA0B8", text: L.evtShirtConnected, action: L.evtViewDetails, type: "device" as const },
+      { id: "e2", time: "8:30 AM", iconName: "User", color: "#5B8AF0", text: L.evtCheckin, action: L.evtEditNote, type: "patient" as const },
+      { id: "e3", time: "9:00 AM", iconName: "Pill", color: "#5B8AF0", text: L.evtMedLogged, action: L.evtEditNote, type: "patient" as const },
+      { id: "e4", time: "11:45 AM", iconName: "Wind", color: "#27C28A", text: L.evtBreathingNormal, action: L.evtView, type: "cardiac" as const },
+      { id: "e5", time: "1:30 PM", iconName: "Gauge", color: "#F5A623", text: L.evtStrainElevated, action: L.evtView, type: "cardiac" as const },
+      { id: "e6", time: "2:15 PM", iconName: "Heart", color: "#E8304A", text: L.evtIrregular, action: L.evtViewECG, type: "cardiac" as const },
+      { id: "e7", time: "2:18 PM", iconName: "TrendingDown", color: "#E8304A", text: L.evtTWaveInversion, action: L.evtViewECG, type: "cardiac" as const },
+      { id: "e8", time: "2:22 PM", iconName: "TrendingUp", color: "#E8304A", text: L.evtSTDeviation, action: L.evtViewECG, type: "cardiac" as const },
+      { id: "e9", time: "3:15 PM", iconName: "Brain", color: "#27C28A", text: L.evtStressLow, action: L.evtView, type: "cardiac" as const },
+      { id: "e10", time: "3:42 PM", iconName: "Sparkles", color: "#F5A623", text: L.evtAISummary, action: L.evtView, type: "cardiac" as const },
+      { id: "e11", time: "6:00 PM", iconName: "User", color: "#5B8AF0", text: L.evtFatigue, action: L.evtEditNote, type: "patient" as const },
+    ] : [];
+
+    // Filter out if not alerts day (selected day hasAlert must be true for alert/cardiac red events)
+    if (selected && !selected.hasAlert) {
+      baseEvents = baseEvents.filter(e => e.color !== "#E8304A");
+    }
+
+    const custom = customEventsByDate[selectedDateStr] || [];
+    const combined = [...baseEvents, ...custom];
+
+    const parseTimeToMinutes = (tStr: string) => {
+      const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!match) return 0;
+      let h = parseInt(match[1]);
+      const m = parseInt(match[2]);
+      const ampm = match[3].toUpperCase();
+      if (ampm === "PM" && h < 12) h += 12;
+      if (ampm === "AM" && h === 12) h = 0;
+      return h * 60 + m;
+    };
+
+    return combined.sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
+  }, [selected, selectedDateStr, customEventsByDate]);
+
+  const cardiacEvents = dayEvents.filter((e) => e.type !== "device");
+  const deviceEvents = dayEvents.filter((e) => e.type === "device");
   const hasCardiacEvents = cardiacEvents.length > 0;
+
 
   return (
     <div className="flex h-full" style={{ background: c.pageBg, fontFamily: "Syne, sans-serif" }}>
@@ -390,7 +718,7 @@ export function CardiacDiaryScreen() {
 
             {/* Day Header */}
             <div>
-              <div className="flex items-start justify-between flex-wrap gap-2">
+              <div className="flex items-start justify-between flex-wrap gap-4">
                 <div>
                   <h1 style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 28, lineHeight: 1.2 }}>
                     {new Date(currentYear, currentMonth, selectedDay).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}
@@ -399,7 +727,7 @@ export function CardiacDiaryScreen() {
                     {new Date(currentYear, currentMonth, selectedDay).toLocaleDateString("en-US", { weekday: "long" })}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className="px-3 py-1 rounded-full" style={{
                     background: selected.wearing === "full" ? "rgba(39,194,138,0.15)" : selected.wearing === "partial" ? "rgba(245,166,35,0.15)" : d ? "rgba(100,120,200,0.1)" : "rgba(0,0,0,0.05)",
                     color: selected.wearing === "full" ? "#27C28A" : selected.wearing === "partial" ? "#F5A623" : c.textMuted,
@@ -409,6 +737,20 @@ export function CardiacDiaryScreen() {
                   </span>
                   {selected.hasAlert && (
                     <span className="px-2.5 py-1 rounded-full" style={{ background: "rgba(232,48,74,0.12)", color: "#E8304A", fontFamily: "DM Mono, monospace", fontSize: 10 }}>{L.alert1}</span>
+                  )}
+                  {selected.wearing !== "none" && (
+                    <button
+                      onClick={openSymptomModal}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full hover:opacity-90 active:scale-95 transition-all text-white font-medium"
+                      style={{
+                        background: "#F5A623",
+                        fontFamily: "Syne, sans-serif",
+                        fontSize: 11,
+                        boxShadow: "0 2px 5px rgba(245, 166, 35, 0.2)"
+                      }}
+                    >
+                      <Plus size={12} /> Log Symptom
+                    </button>
                   )}
                 </div>
               </div>
@@ -494,15 +836,16 @@ export function CardiacDiaryScreen() {
                 </div>
                 {/* Event timeline markers */}
                 <div className="flex flex-wrap gap-2.5 mt-3">
-                  {[
-                    { time: "9:00 AM", icon: Pill, label: L.medication, color: "#5B8AF0" },
-                    { time: "2:15 PM", icon: AlertTriangle, label: L.irregular, color: "#E8304A" },
-                    { time: "6:00 PM", icon: User, label: L.fatigue, color: "#F5A623" },
-                  ].map((e) => (
-                    <div key={e.time} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: c.chipBg, fontFamily: "DM Mono, monospace", fontSize: 9, color: c.textSecondary }}>
-                      <e.icon size={10} style={{ color: e.color }} /> {e.time} — {e.label}
-                    </div>
-                  ))}
+                  {dayEvents
+                    .filter(e => e.type === "patient" || e.color === "#E8304A" || e.iconName === "Pill" || e.iconName === "AlertTriangle")
+                    .map((e, idx) => (
+                      <div key={`cm-${idx}`} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: c.chipBg, fontFamily: "DM Mono, monospace", fontSize: 9, color: c.textSecondary }}>
+                        <EventIcon name={e.iconName} color={e.color} /> {e.time} — {e.text.replace("Symptom logged: ", "").replace("Medication logged: ", "")}
+                      </div>
+                    ))}
+                  {!dayEvents.some(e => e.type === "patient" || e.color === "#E8304A" || e.iconName === "Pill" || e.iconName === "AlertTriangle") && (
+                    <span style={{ color: c.textMuted, fontFamily: "Syne, sans-serif", fontSize: 10 }}>No markers for this day</span>
+                  )}
                 </div>
               </div>
             )}
@@ -554,10 +897,17 @@ export function CardiacDiaryScreen() {
                   <div className="space-y-1">
                     {cardiacEvents.map((e, i) => (
                       <div key={`ce-${i}`} className="flex items-center gap-3 py-2.5">
-                        <e.icon size={16} style={{ color: e.color, flexShrink: 0 }} />
+                        <EventIcon name={e.iconName} color={e.color} />
                         <span style={{ color: c.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 12, minWidth: 68, flexShrink: 0 }}>{e.time}</span>
                         <span className="flex-1" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 14 }}>{e.text}</span>
-                        <button className="hover:underline" style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 13, whiteSpace: "nowrap" }}>{e.action}</button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleActionClick(e)} className="hover:underline text-left" style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 13, whiteSpace: "nowrap" }}>{e.action}</button>
+                          {e.isCustom && (
+                            <button onClick={() => deleteCustomEvent(e.id)} className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ color: c.textMuted }} title="Delete event">
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                     {/* Device events toggle */}
@@ -569,10 +919,17 @@ export function CardiacDiaryScreen() {
                         </button>
                         {showDeviceEvents && deviceEvents.map((e, i) => (
                           <div key={`de-${i}`} className="flex items-center gap-3 py-2.5">
-                            <e.icon size={16} style={{ color: e.color, flexShrink: 0 }} />
+                            <EventIcon name={e.iconName} color={e.color} />
                             <span style={{ color: c.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 12, minWidth: 68, flexShrink: 0 }}>{e.time}</span>
                             <span className="flex-1" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 14 }}>{e.text}</span>
-                            <button className="hover:underline" style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 13, whiteSpace: "nowrap" }}>{e.action}</button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => handleActionClick(e)} className="hover:underline text-left" style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 13, whiteSpace: "nowrap" }}>{e.action}</button>
+                              {e.isCustom && (
+                                <button onClick={() => deleteCustomEvent(e.id)} className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ color: c.textMuted }} title="Delete event">
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </>
@@ -654,19 +1011,22 @@ export function CardiacDiaryScreen() {
                         </div>
                         {/* Interactive checkboxes */}
                         <div className="flex gap-1.5">
-                          {(["morning", "noon", "evening"] as const).map(slot => (
-                            <button key={slot} onClick={() => toggleMedSlot(med.id, slot)}
-                              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:scale-105"
-                              style={{
-                                background: med.slots[slot] ? "rgba(39,194,138,0.15)" : c.chipBg,
-                                borderWidth: 1, borderStyle: "solid",
-                                borderColor: med.slots[slot] ? "rgba(39,194,138,0.35)" : c.borderColor,
-                              }} title={slot.charAt(0).toUpperCase() + slot.slice(1)}>
-                              {med.slots[slot]
-                                ? <Check size={13} style={{ color: "#27C28A" }} />
-                                : <span style={{ color: c.textMuted, fontFamily: "DM Mono, monospace", fontSize: 9 }}>{slot[0].toUpperCase()}</span>}
-                            </button>
-                          ))}
+                          {(["morning", "noon", "evening"] as const).map(slot => {
+                            const checked = isSlotChecked(med.id, slot);
+                            return (
+                              <button key={slot} onClick={() => toggleMedSlot(med.id, slot)}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:scale-105"
+                                style={{
+                                  background: checked ? "rgba(39,194,138,0.15)" : c.chipBg,
+                                  borderWidth: 1, borderStyle: "solid",
+                                  borderColor: checked ? "rgba(39,194,138,0.35)" : c.borderColor,
+                                }} title={slot.charAt(0).toUpperCase() + slot.slice(1)}>
+                                {checked
+                                  ? <Check size={13} style={{ color: "#27C28A" }} />
+                                  : <span style={{ color: c.textMuted, fontFamily: "DM Mono, monospace", fontSize: 9 }}>{slot[0].toUpperCase()}</span>}
+                              </button>
+                            );
+                          })}
                         </div>
                         {/* Edit controls */}
                         {medEditMode && (
@@ -744,6 +1104,7 @@ export function CardiacDiaryScreen() {
               {notesOpen && (
                 <div className="px-5 pb-5 space-y-3 animate-slide-down">
                   <textarea
+                    id="daily-note-textarea"
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
                     placeholder={L.addNote}
@@ -752,7 +1113,14 @@ export function CardiacDiaryScreen() {
                     style={{ background: c.inputBg, color: c.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 13, border: `1px solid ${c.borderColor}` }}
                   />
                   {noteText && (
-                    <button className="px-4 py-1.5 rounded-lg hover:opacity-90" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12 }}>{L.saveNote}</button>
+                    <button
+                      onClick={saveNote}
+                      className="px-4 py-1.5 rounded-lg hover:opacity-90 flex items-center gap-1.5"
+                      style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12 }}
+                    >
+                      {noteSaved ? <Check size={12} /> : null}
+                      {noteSaved ? "Saved!" : L.saveNote}
+                    </button>
                   )}
                 </div>
               )}
@@ -775,6 +1143,224 @@ export function CardiacDiaryScreen() {
           </div>
         )}
       </div>
+
+      {/* Modal Overlays */}
+      {symptomModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4 animate-scale-up" style={{ background: c.cardBg, border: `1px solid ${c.borderColor}`, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold flex items-center gap-2" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif" }}>
+                <AlertTriangle size={18} style={{ color: "#F5A623" }} /> Log a Symptom
+              </span>
+              <button onClick={() => setSymptomModalOpen(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5" style={{ color: c.textSecondary }}>
+                <X size={16} />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Predefined Chips */}
+              <div>
+                <span className="text-xs font-semibold block mb-2" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>SELECT SYMPTOM</span>
+                <div className="flex flex-wrap gap-2">
+                  {["Chest tightness", "Shortness of breath", "Dizziness", "Mild fatigue", "Palpitations"].map((preset) => {
+                    const isSel = symptomName === preset;
+                    return (
+                      <button
+                        key={preset}
+                        onClick={() => setSymptomName(preset)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={{
+                          background: isSel ? "#F5A623" : c.chipBg,
+                          color: isSel ? "#fff" : c.textSecondary,
+                          border: isSel ? "1px solid #F5A623" : `1px solid ${c.borderColor}`,
+                        }}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Custom Input */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>OR TYPE CUSTOM SYMPTOM</span>
+                <input
+                  type="text"
+                  placeholder="Enter custom symptom..."
+                  value={symptomName}
+                  onChange={(e) => setSymptomName(e.target.value)}
+                  className="px-3.5 py-2 rounded-xl outline-none"
+                  style={{ background: c.inputBg, border: `1px solid ${c.borderColor}`, color: c.textPrimary, fontSize: 13, fontFamily: "Syne, sans-serif" }}
+                />
+              </div>
+
+              {/* Time selection */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>TIME</span>
+                <input
+                  type="text"
+                  placeholder="e.g. 10:30 AM"
+                  value={symptomTime}
+                  onChange={(e) => setSymptomTime(e.target.value)}
+                  className="px-3.5 py-2 rounded-xl outline-none"
+                  style={{ background: c.inputBg, border: `1px solid ${c.borderColor}`, color: c.textPrimary, fontSize: 13, fontFamily: "DM Mono, monospace" }}
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>NOTES / CONTEXT (OPTIONAL)</span>
+                <textarea
+                  placeholder="e.g. Occurred while climbing stairs, lasted 2 minutes"
+                  value={symptomNotes}
+                  onChange={(e) => setSymptomNotes(e.target.value)}
+                  rows={2}
+                  className="px-3.5 py-2 rounded-xl outline-none resize-none"
+                  style={{ background: c.inputBg, border: `1px solid ${c.borderColor}`, color: c.textPrimary, fontSize: 13, fontFamily: "Syne, sans-serif" }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 justify-end mt-2">
+              <button onClick={() => setSymptomModalOpen(false)} className="px-4 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: c.textSecondary, background: c.chipBg, fontFamily: "Syne, sans-serif" }}>
+                Cancel
+              </button>
+              <button
+                disabled={!symptomName.trim()}
+                onClick={handleSaveSymptom}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ background: "#E8304A", fontFamily: "Syne, sans-serif" }}
+              >
+                Log Symptom
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {ecgPlayerOpen && selectedEventDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-xl rounded-2xl p-6 flex flex-col gap-4" style={{ background: c.cardBg, border: `1px solid ${c.borderColor}`, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold flex items-center gap-2" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif" }}>
+                <Heart size={18} style={{ color: "#E8304A" }} /> ECG Clip: {selectedEventDetails.text}
+              </span>
+              <button onClick={() => setEcgPlayerOpen(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5" style={{ color: c.textSecondary }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="text-xs" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>
+              Timestamp: <span className="font-semibold" style={{ fontFamily: "DM Mono, monospace" }}>{selectedEventDetails.time}</span> | Channel: Lead II | Sample Rate: 250 Hz
+            </div>
+
+            {/* ECG wave canvas player */}
+            <EcgWaveformPlayer type={ecgPlayerType} />
+
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="p-2.5 rounded-xl" style={{ background: c.surfaceBg, border: `1px solid ${c.borderColor}` }}>
+                <span className="text-[10px] block" style={{ color: c.textMuted, fontFamily: "Syne, sans-serif" }}>HEART RATE</span>
+                <span className="text-lg font-semibold" style={{ color: c.textPrimary, fontFamily: "DM Mono, monospace" }}>
+                  {ecgPlayerType === "irregular" ? "88 BPM" : "64 BPM"}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl" style={{ background: c.surfaceBg, border: `1px solid ${c.borderColor}` }}>
+                <span className="text-[10px] block" style={{ color: c.textMuted, fontFamily: "Syne, sans-serif" }}>RHYTHM TYPE</span>
+                <span className="text-sm font-semibold" style={{ color: ecgPlayerType === "irregular" ? "#E8304A" : "#27C28A", fontFamily: "Syne, sans-serif" }}>
+                  {ecgPlayerType === "irregular" ? "PVC / Irregular" : "Normal Sinus"}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl" style={{ background: c.surfaceBg, border: `1px solid ${c.borderColor}` }}>
+                <span className="text-[10px] block" style={{ color: c.textMuted, fontFamily: "Syne, sans-serif" }}>STATUS</span>
+                <span className="text-sm font-semibold" style={{ color: ecgPlayerType === "irregular" ? "#F5A623" : "#27C28A", fontFamily: "Syne, sans-serif" }}>
+                  {ecgPlayerType === "irregular" ? "Mild Anomaly" : "Healthy"}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>
+              {ecgPlayerType === "irregular"
+                ? "The tracing shows isolated premature ventricular contractions (PVCs) lasting approximately 40 seconds. Baselines before and after are stable. Recorded automatically due to localized HR velocity changes."
+                : "Continuous sinus rhythm observed with steady P-R intervals and normal T-wave morphology. No signs of conduction defects or ST-segment elevation."}
+            </p>
+
+            <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: `1px solid ${c.borderColor}` }}>
+              <div className="flex items-center gap-1.5">
+                <Brain size={13} style={{ color: "#27C28A" }} />
+                <span className="text-[11px]" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>Model confidence: 94.6%</span>
+              </div>
+              <button onClick={() => setEcgPlayerOpen(false)} className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white" style={{ background: "#E8304A", fontFamily: "Syne, sans-serif" }}>
+                Close Waveform
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailsModalOpen && selectedEventDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4 animate-scale-up" style={{ background: c.cardBg, border: `1px solid ${c.borderColor}`, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold flex items-center gap-2" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif" }}>
+                Event Details
+              </span>
+              <button onClick={() => setDetailsModalOpen(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5" style={{ color: c.textSecondary }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: c.surfaceBg, border: `1px solid ${c.borderColor}` }}>
+                <EventIcon name={selectedEventDetails.iconName} color={selectedEventDetails.color} />
+                <div>
+                  <span className="text-xs block" style={{ color: c.textMuted, fontFamily: "Syne, sans-serif" }}>EVENT</span>
+                  <span className="text-sm font-semibold" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif" }}>{selectedEventDetails.text}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="p-2.5 rounded-xl" style={{ background: c.surfaceBg, border: `1px solid ${c.borderColor}` }}>
+                  <span className="text-[10px] block" style={{ color: c.textMuted, fontFamily: "Syne, sans-serif" }}>TIMESTAMP</span>
+                  <span className="text-xs font-semibold" style={{ color: c.textPrimary, fontFamily: "DM Mono, monospace" }}>{selectedEventDetails.time}</span>
+                </div>
+                <div className="p-2.5 rounded-xl" style={{ background: c.surfaceBg, border: `1px solid ${c.borderColor}` }}>
+                  <span className="text-[10px] block" style={{ color: c.textMuted, fontFamily: "Syne, sans-serif" }}>SEVERITY</span>
+                  <span className="text-xs font-semibold" style={{
+                    color: selectedEventDetails.color === "#E8304A" ? "#E8304A" : selectedEventDetails.color === "#F5A623" ? "#F5A623" : "#27C28A",
+                    fontFamily: "Syne, sans-serif"
+                  }}>
+                    {selectedEventDetails.color === "#E8304A" ? "High Alert" : selectedEventDetails.color === "#F5A623" ? "Moderate Anomaly" : "Normal Information"}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-xs font-semibold block mb-1" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>DIAGNOSTIC INSIGHT</span>
+                <p className="text-xs leading-relaxed" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>
+                  {selectedEventDetails.text.includes("Strain") 
+                    ? "Your physical exertion/strain index spiked. Typical baseline resting strain is <20%, while this event reached 42%. Your heart rate normalized rapidly afterwards, indicating a healthy cardiac recovery response."
+                    : selectedEventDetails.text.includes("Breathing")
+                    ? "Your respiratory rate was steady at 16 breaths per minute. This falls well within the ideal resting range of 12-20 BPM, indicating calm parasympathetic tone and stable respiratory function."
+                    : selectedEventDetails.text.includes("Stress")
+                    ? "Stress index measured 24/100, which correlates with optimal autonomic balance. Consistent low stress scores promote long-term cardiovascular health."
+                    : selectedEventDetails.text.includes("connected")
+                    ? "The CardiShirt smart textile detected a proper skin-to-sensor contact and established a Bluetooth Low Energy (BLE) link to the app, initiating telemetry recording."
+                    : selectedEventDetails.text.includes("Check-in")
+                    ? "Patient self-reported as 'feeling good' during the daily check-in prompt. No associated vitals abnormalities or discomfort were logged."
+                    : "No acute action is required. This event has been archived and will be included in your weekly report summary for your healthcare provider."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end mt-2">
+              <button onClick={() => setDetailsModalOpen(false)} className="px-4 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: "#E8304A", fontFamily: "Syne, sans-serif" }}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
