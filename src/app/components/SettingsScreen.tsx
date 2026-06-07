@@ -1550,34 +1550,6 @@ function MiniWaveform({ status, width = 40, height = 24 }: { status: LeadStatus;
   return <canvas ref={canvasRef} width={width} height={height} />;
 }
 
-      if (p < 40) return 0.75;
-      if (p < 45) return -0.35;
-      if (p < 55) return 0;
-      if (p < 65) return Math.sin((p - 55) / 10 * Math.PI) * 0.2;
-      return 0;
-    };
-
-    const draw = () => {
-      ctx.clearRect(0, 0, w, h);
-      ctx.strokeStyle = "#E8304A";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      for (let x = 0; x < w; x++) {
-        const val = ecgPattern(x + offsetRef.current);
-        const y = h / 2 - val * (h * 0.4);
-        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      offsetRef.current += 1.5;
-      animRef.current = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(animRef.current);
-  }, []);
-
-  return <canvas ref={canvasRef} width={600} height={80} style={{ width: "100%", height: 80 }} />;
-}
-
 /* ════════════════════════════════════════════
    3. ALERTS & NOTIFICATIONS
    ════════════════════════════════════════════ */
