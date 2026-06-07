@@ -8,38 +8,39 @@ import {
   TestTube, Navigation, User
 } from "lucide-react";
 import { PieChart, Pie, Cell } from "recharts";
-import { useTheme } from "./ThemeContext";
+import { useTheme, useTokens } from "./ThemeContext";
 import { useLiveVitals, API_URL } from "./useBackend";
 
 /* ═══════════════ THEME COLORS ═══════════════ */
 function useColors() {
   const { theme } = useTheme();
-  const d = theme === "dark";
+  const tk = useTokens();
+  const d = theme === "dark" || theme === "ocean";
   return {
-    pageBg: d ? "#0D0F1A" : "#F4F5F9",
-    cardBg: d ? "#141629" : "#FFFFFF",
-    cardElevated: d ? "#1A1D35" : "#F7F8FC",
-    cardBorder: d ? "rgba(100,120,200,0.15)" : "rgba(0,0,0,0.08)",
-    text: d ? "#F0F2FF" : "#0D0F1A",
-    secondary: d ? "#8890B8" : "#6B7499",
-    muted: d ? "#4A5070" : "#9AA0B8",
-    strip: d ? "#1A1D35" : "#F0F2F8",
-    shadow: d ? "none" : "0 1px 4px rgba(0,0,0,0.06)",
-    inputBg: d ? "#1A1D35" : "#F7F8FC",
-    inputBorder: d ? "rgba(100,120,200,0.2)" : "rgba(0,0,0,0.12)",
-    chipBg: d ? "#1A1D35" : "#F3F4F6",
-    emergBg: d ? "rgba(232,48,74,0.04)" : "#FDF7F7",
-    emergBorder: d ? "rgba(232,48,74,0.15)" : "rgba(232,48,74,0.08)",
-    emergActiveBg: d ? "rgba(232,48,74,0.1)" : "#FBF0F0",
+    pageBg: tk.pageBg,
+    cardBg: tk.cardBg,
+    cardElevated: tk.cardElevated,
+    cardBorder: tk.cardBorder,
+    text: tk.textPrimary,
+    secondary: tk.textSecondary,
+    muted: tk.textMuted,
+    strip: theme === "ocean" ? "#0A1929" : theme === "nature" ? "#E8F0EA" : d ? "#1A1D35" : "#F0F2F8",
+    shadow: tk.shadow,
+    inputBg: tk.inputBg,
+    inputBorder: tk.cardBorder,
+    chipBg: tk.chipBg,
+    emergBg: tk.cardiacRedGlow,
+    emergBorder: "rgba(232,48,74,0.15)",
+    emergActiveBg: "rgba(232,48,74,0.1)",
     emergActiveBorder: "rgba(232,48,74,0.5)",
-    rightBg: d ? "#0D0F1A" : "#FFFFFF",
-    rightCard: d ? "#141629" : "#F7F8FC",
-    rightText: d ? "#F0F2FF" : "#0D0F1A",
-    rightSecondary: d ? "#8890B8" : "#6B7499",
-    ringTrack: d ? "rgba(100,120,200,0.1)" : "rgba(0,0,0,0.06)",
-    red: "#E8304A",
-    green: "#27C28A",
-    amber: "#F5A623",
+    rightBg: tk.pageBg,
+    rightCard: tk.cardBg,
+    rightText: tk.textPrimary,
+    rightSecondary: tk.textSecondary,
+    ringTrack: tk.ecgGrid,
+    red: tk.cardiacRed,
+    green: tk.green,
+    amber: tk.amber,
     blue: "#5B8AF0",
     gray: "#C2C8D6",
     d,
@@ -101,6 +102,7 @@ interface AmbulanceService {
   integrated: boolean;
   coverage: string;
   responseTime: string;
+  autoDispatch?: boolean;
 }
 
 const SERVICES_INIT: AmbulanceService[] = [
@@ -251,18 +253,49 @@ function SwipeToConfirm({ onConfirm }: { onConfirm: () => void }) {
   );
 }
 
+/* ═══════════════ EDIT FIELD MODAL ═══════════════ */
+function EditFieldModal({ title, value, onSave, onClose }: { title: string, value: string, onSave: (v: string) => void, onClose: () => void }) {
+  const c = useColors();
+  const [val, setVal] = useState(value);
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }} onClick={onClose}>
+      <div style={{
+        background: c.cardBg, border: `1px solid ${c.cardBorder}`, borderRadius: 16, width: "100%", maxWidth: 400,
+        boxShadow: "0 8px 40px rgba(0,0,0,0.3)", padding: 24
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontFamily: "Syne, sans-serif", fontSize: 16, fontWeight: 600, color: c.text, marginBottom: 16 }}>{title}</div>
+        <input value={val} onChange={e => setVal(e.target.value)} style={{
+          width: "100%", background: c.inputBg, border: `1px solid ${c.inputBorder}`, borderRadius: 8,
+          padding: "10px 14px", fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text, marginBottom: 16, outline: "none"
+        }} />
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Cancel</button>
+          <button onClick={() => { onSave(val); onClose(); }} className="px-4 py-2 rounded-lg" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════ MEMBER COMPONENT CARD ═══════════════ */
 function MemberCard({
-  member, onEditPerms, editOpen, onRemove,
+  member, onEditPerms, editOpen, onRemove, onUpdate, onResend, onCall,
 }: {
   member: Member;
   onEditPerms: (id: string | null) => void;
   editOpen: boolean;
   onRemove: (id: string) => void;
+  onUpdate: (id: string, data: Partial<Member>) => void;
+  onResend: (id: string) => void;
+  onCall: (id: string) => void;
 }) {
   const c = useColors();
   const [perms, setPerms] = useState(member.permissions);
   const [notif, setNotif] = useState(member.notifLevel);
+  const [isEC, setIsEC] = useState(member.isEmergencyContact);
   const [showMenu, setShowMenu] = useState(false);
   const isPending = member.status === "pending";
   const isInactive = member.status === "inactive";
@@ -302,7 +335,7 @@ function MemberCard({
             {isPending ? (
               <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                 <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.amber }}>{member.lastActivity}</span>
-                <button className="hover:underline text-[12px]" style={{ color: c.red }}>Resend</button>
+                <button className="hover:underline text-[12px]" style={{ color: c.red }} onClick={() => onResend(member.id)}>Resend</button>
                 <button className="hover:underline text-[12px]" style={{ color: c.secondary }} onClick={() => onRemove(member.id)}>Cancel</button>
               </div>
             ) : (
@@ -340,7 +373,7 @@ function MemberCard({
                     minWidth: 160, overflow: "hidden",
                   }}>
                     <button className="w-full px-4 py-2.5 text-left flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}
-                      onClick={() => setShowMenu(false)}>
+                      onClick={() => { setShowMenu(false); onCall(member.id); }}>
                       <Phone size={14} /> Call
                     </button>
                     <button className="w-full px-4 py-2.5 text-left flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.red }}
@@ -418,11 +451,11 @@ function MemberCard({
                   <div style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.secondary }}>Will be notified/called during emergency dispatch</div>
                 </div>
               </div>
-              <Toggle on={member.isEmergencyContact} onToggle={() => {}} />
+              <Toggle on={isEC} onToggle={() => setIsEC(!isEC)} />
             </div>
 
             <div className="flex items-center gap-3">
-              <button onClick={() => onEditPerms(null)} className="px-4 py-1.5 rounded-lg hover:opacity-90 transition-opacity" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
+              <button onClick={() => { onUpdate(member.id, { permissions: perms, notifLevel: notif, isEmergencyContact: isEC }); onEditPerms(null); }} className="px-4 py-1.5 rounded-lg hover:opacity-90 transition-opacity" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
                 Save changes
               </button>
               <button onClick={() => onEditPerms(null)} className="hover:underline text-xs" style={{ fontFamily: "Syne, sans-serif", color: c.secondary }}>Cancel</button>
@@ -502,7 +535,7 @@ function AddMemberModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
 }
 
 /* ═══════════════ ALERT SIMULATION MODAL ═══════════════ */
-function AlertSimulationModal({ countdownTotal, onClose }: { countdownTotal: number; onClose: () => void }) {
+function AlertSimulationModal({ countdownTotal, onClose, onCall }: { countdownTotal: number; onClose: () => void; onCall: () => void }) {
   const c = useColors();
   const [seconds, setSeconds] = useState(countdownTotal);
   const [phase, setPhase] = useState<"countdown" | "cancelled" | "dispatched" | "tracking">("countdown");
@@ -668,7 +701,7 @@ function AlertSimulationModal({ countdownTotal, onClose }: { countdownTotal: num
               ))}
             </div>
 
-            <button className="w-full py-2.5 rounded-lg flex items-center justify-center gap-2 hover:opacity-90" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 500 }}>
+            <button onClick={onCall} className="w-full py-2.5 rounded-lg flex items-center justify-center gap-2 hover:opacity-90" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 500 }}>
               <PhoneForwarded size={14} /> Call Dispatch Center
             </button>
           </div>
@@ -830,6 +863,18 @@ export function FamilyCircleScreen() {
   const [countdownPreview, setCountdownPreview] = useState(false);
   const [previewSec, setPreviewSec] = useState(60);
 
+  const [toast, setToast] = useState<string | null>(null);
+  const [services, setServices] = useState(SERVICES_INIT.map(s => ({ ...s, autoDispatch: s.id === "s1" })));
+  const [address, setAddress] = useState("42/3 Dhanmondi, Road 7A\nDhaka 1205, Bangladesh");
+  const [dispatchPhone, setDispatchPhone] = useState("+880 1712-345678");
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     if (!countdownPreview) return;
     if (previewSec <= 0) { setCountdownPreview(false); setPreviewSec(responseWindow); return; }
@@ -917,6 +962,9 @@ export function FamilyCircleScreen() {
                   editOpen={editingPerms === m.id}
                   onEditPerms={setEditingPerms}
                   onRemove={removeMember}
+                  onUpdate={(id, data) => setMembers(prev => prev.map(member => member.id === id ? { ...member, ...data } : member))}
+                  onResend={(id) => showToast(`Invitation resent to ${members.find(member => member.id === id)?.name}`)}
+                  onCall={(id) => showToast(`Calling ${members.find(member => member.id === id)?.name}...`)}
                 />
               ))}
             </div>
@@ -988,15 +1036,15 @@ export function FamilyCircleScreen() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
                     <div className="p-3 rounded-lg" style={{ background: c.cardElevated, border: `1px solid ${c.cardBorder}` }}>
                       <div style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.secondary, marginBottom: 2 }}>Registered Address</div>
-                      <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, fontWeight: 500 }}>42/3 Dhanmondi, Road 7A</div>
-                      <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>Dhaka 1205, Bangladesh</div>
-                      <button className="mt-2 text-xs font-semibold hover:underline" style={{ color: c.red }}>Edit</button>
+                      <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, fontWeight: 500, whiteSpace: "pre-line" }}>{address.split('\n')[0]}</div>
+                      <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary, whiteSpace: "pre-line" }}>{address.split('\n').slice(1).join('\n')}</div>
+                      <button onClick={() => setEditingAddress(true)} className="mt-2 text-xs font-semibold hover:underline" style={{ color: c.red }}>Edit</button>
                     </div>
                     <div className="p-3 rounded-lg" style={{ background: c.cardElevated, border: `1px solid ${c.cardBorder}` }}>
                       <div style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.secondary, marginBottom: 2 }}>Dispatch Phone</div>
-                      <div style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text, fontWeight: 500 }}>+880 1712-345678</div>
+                      <div style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text, fontWeight: 500 }}>{dispatchPhone}</div>
                       <div style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.muted, marginTop: 2 }}>Shared during emergency dispatch</div>
-                      <button className="mt-2 text-xs font-semibold hover:underline" style={{ color: c.red }}>Edit</button>
+                      <button onClick={() => setEditingPhone(true)} className="mt-2 text-xs font-semibold hover:underline" style={{ color: c.red }}>Edit</button>
                     </div>
                   </div>
 
@@ -1079,7 +1127,7 @@ export function FamilyCircleScreen() {
               </p>
 
               <div className="flex flex-col gap-3 mb-4">
-                {SERVICES_INIT.map(s => (
+                {services.map(s => (
                   <div key={s.id} className="p-4 rounded-xl" style={{ background: c.cardElevated, border: `1px solid ${c.cardBorder}` }}>
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div>
@@ -1109,10 +1157,10 @@ export function FamilyCircleScreen() {
                       {s.integrated ? (
                         <div className="flex items-center gap-2">
                           <span style={{ fontFamily: "Syne, sans-serif", color: c.secondary }}>Auto dispatch</span>
-                          <Toggle on={s.id === "s1"} onToggle={() => {}} />
+                          <Toggle on={s.autoDispatch || false} onToggle={() => setServices(prev => prev.map(srv => srv.id === s.id ? { ...srv, autoDispatch: !srv.autoDispatch } : srv))} />
                         </div>
                       ) : (
-                        <button className="hover:underline" style={{ fontFamily: "Syne, sans-serif", color: c.red }}>
+                        <button onClick={() => showToast("Pre-registration started for " + s.name)} className="hover:underline" style={{ fontFamily: "Syne, sans-serif", color: c.red }}>
                           <ExternalLink size={11} className="inline mr-1" /> Pre-register
                         </button>
                       )}
@@ -1142,7 +1190,20 @@ export function FamilyCircleScreen() {
 
       {/* Invites & Testing Modals */}
       {showAddMember && <AddMemberModal onClose={() => setShowAddMember(false)} onAdd={addMember} />}
-      {showAlertSim && <AlertSimulationModal countdownTotal={responseWindow} onClose={() => setShowAlertSim(false)} />}
+      {showAlertSim && <AlertSimulationModal countdownTotal={responseWindow} onClose={() => setShowAlertSim(false)} onCall={() => showToast("Calling Dispatch Center...")} />}
+      {editingAddress && <EditFieldModal title="Edit Address" value={address} onSave={setAddress} onClose={() => setEditingAddress(false)} />}
+      {editingPhone && <EditFieldModal title="Edit Dispatch Phone" value={dispatchPhone} onSave={setDispatchPhone} onClose={() => setEditingPhone(false)} />}
+      
+      {toast && (
+        <div className="animate-fade-in" style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 1000,
+          background: c.d ? "#2A2D40" : "#333333", color: "#FFFFFF", padding: "12px 24px", borderRadius: 8,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)", border: `1px solid ${c.cardBorder}`,
+          fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap"
+        }}>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

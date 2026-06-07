@@ -10,35 +10,36 @@ import {
   LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis,
   Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid, PieChart, Pie, Cell
 } from "recharts";
-import { useTheme } from "./ThemeContext";
+import { useTheme, useTokens } from "./ThemeContext";
 import { useDailySummaries, API_URL } from "./useBackend";
 
 function useColors() {
   const { theme } = useTheme();
-  const d = theme === "dark";
+  const tk = useTokens();
+  const d = theme === "dark" || theme === "ocean";
   return {
-    headerBg: d ? "#0D0F1A" : "#F4F5F9",
-    headerCard: d ? "#141629" : "#FFFFFF",
-    headerText: d ? "#F0F2FF" : "#0D0F1A",
-    headerSecondary: d ? "#8890B8" : "#6B7499",
-    headerMuted: d ? "#4A5070" : "#9AA0B8",
-    headerBorder: d ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
-    bodyBg: d ? "#0D0F1A" : "#FFFFFF",
-    cardBg: d ? "#141629" : "#F7F8FC",
-    cardBorder: d ? "rgba(100,120,200,0.15)" : "rgba(0,0,0,0.08)",
-    bodyText: d ? "#F0F2FF" : "#0D0F1A",
-    bodySecondary: d ? "#8890B8" : "#6B7499",
-    bodyMuted: d ? "#4A5070" : "#9AA0B8",
-    gridLine: d ? "rgba(100,120,200,0.06)" : "rgba(0,0,0,0.06)",
-    shadow: d ? "none" : "0 1px 4px rgba(0,0,0,0.06)",
-    chipBg: d ? "#1A1D35" : "#F3F4F6",
-    surfaceBg: d ? "#1A1D35" : "#F7F8FC",
-    rightBg: d ? "#0D0F1A" : "#FFFFFF",
-    rightCard: d ? "#141629" : "#F7F8FC",
-    rightText: d ? "#F0F2FF" : "#0D0F1A",
-    rightSecondary: d ? "#8890B8" : "#6B7499",
-    ringTrack: d ? "rgba(100,120,200,0.1)" : "rgba(0,0,0,0.06)",
-    red: "#E8304A", amber: "#F5A623", green: "#27C28A", blue: "#5B8AF0", d,
+    headerBg: tk.pageBg,
+    headerCard: tk.cardBg,
+    headerText: tk.textPrimary,
+    headerSecondary: tk.textSecondary,
+    headerMuted: tk.textMuted,
+    headerBorder: tk.cardBorder,
+    bodyBg: tk.pageBg,
+    cardBg: tk.cardBg,
+    cardBorder: tk.cardBorder,
+    bodyText: tk.textPrimary,
+    bodySecondary: tk.textSecondary,
+    bodyMuted: tk.textMuted,
+    gridLine: tk.ecgGrid,
+    shadow: tk.shadow,
+    chipBg: tk.chipBg,
+    surfaceBg: tk.cardElevated,
+    rightBg: tk.pageBg,
+    rightCard: tk.cardBg,
+    rightText: tk.textPrimary,
+    rightSecondary: tk.textSecondary,
+    ringTrack: tk.ecgGrid,
+    red: tk.cardiacRed, amber: tk.amber, green: tk.green, blue: "#5B8AF0", d,
   };
 }
 

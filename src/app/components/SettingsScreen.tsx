@@ -10,7 +10,7 @@ import {
   BellOff, Calendar, ArrowUp, ArrowDown, Ambulance, PhoneCall,
   Navigation, ShieldCheck, ShieldAlert, Share2, History
 } from "lucide-react";
-import { useTheme } from "./ThemeContext";
+import { useTheme, useTokens } from "./ThemeContext";
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -39,30 +39,856 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: 
    ════════════════════════════════════════════ */
 function useColors() {
   const { theme } = useTheme();
-  const d = theme === "dark";
+  const tk = useTokens();
+  const d = theme === "dark" || theme === "ocean";
   return {
-    pageBg: d ? "#0D0F1A" : "#F4F5F9",
-    cardBg: d ? "#141629" : "#FFFFFF",
-    cardElevated: d ? "#1A1D35" : "#F7F8FC",
-    cardBorder: d ? "rgba(100,120,200,0.15)" : "rgba(0,0,0,0.08)",
-    text: d ? "#F0F2FF" : "#0D0F1A",
-    secondary: d ? "#8890B8" : "#6B7499",
-    muted: d ? "#4A5070" : "#9AA0B8",
-    inputBg: d ? "#1A1D35" : "#F7F8FC",
-    inputBorder: d ? "rgba(100,120,200,0.2)" : "rgba(0,0,0,0.12)",
-    shadow: d ? "none" : "0 1px 4px rgba(0,0,0,0.06)",
-    red: "#E8304A",
-    green: "#27C28A",
-    amber: "#F5A623",
+    pageBg: tk.pageBg,
+    cardBg: tk.cardBg,
+    cardElevated: tk.cardElevated,
+    cardBorder: tk.cardBorder,
+    text: tk.textPrimary,
+    secondary: tk.textSecondary,
+    muted: tk.textMuted,
+    inputBg: tk.inputBg,
+    inputBorder: tk.cardBorder,
+    shadow: tk.shadow,
+    red: tk.cardiacRed,
+    green: tk.green,
+    amber: tk.amber,
     blue: "#5B8AF0",
-    divider: d ? "rgba(100,120,200,0.1)" : "rgba(0,0,0,0.06)",
-    hoverBg: d ? "rgba(232,48,74,0.05)" : "rgba(232,48,74,0.04)",
-    activeNavBg: d ? "rgba(232,48,74,0.08)" : "rgba(232,48,74,0.05)",
-    navBorder: d ? "#E8304A" : "#E8304A",
-    strip: d ? "#1A1D35" : "#F0F2F8",
+    divider: tk.borderSubtle,
+    hoverBg: tk.cardiacRedGlow,
+    activeNavBg: tk.cardiacRedGlow,
+    navBorder: tk.cardiacRed,
+    strip: theme === "ocean" ? "#0A1929" : theme === "nature" ? "#E8F0EA" : d ? "#1A1D35" : "#F0F2F8",
     d,
   };
 }
+
+/* ════════════════════════════════════════════
+   MODALS AND DIALOGS
+   ════════════════════════════════════════════ */
+const EditFieldModal = ({ label, initialValue, onSave, onClose }: any) => {
+  const [val, setVal] = useState(initialValue);
+  const c = useColors();
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary, fontFamily: "Syne, sans-serif" }}>{label}</label>
+        <input
+          type="text"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          className="w-full p-2.5 rounded-lg outline-none"
+          style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, color: c.text, fontFamily: "DM Mono, monospace", fontSize: 14 }}
+        />
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm cursor-pointer" style={{ color: c.secondary, fontFamily: "Syne, sans-serif" }}>Cancel</button>
+        <button onClick={() => { onSave(val); onClose(); }} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif" }}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ChangeAvatarModal = ({
+  avatarInitials, setAvatarInitials,
+  avatarBgColor, setAvatarBgColor,
+  avatarUrl, setAvatarUrl,
+  onClose
+}: any) => {
+  const c = useColors();
+  const [init, setInit] = useState(avatarInitials);
+  const [bg, setBg] = useState(avatarBgColor);
+  
+  const colors = ["#5B8AF0", "#E8304A", "#27C28A", "#F5A623", "#9AA0B8", "#6B7499", "#8890B8"];
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatarUrl(reader.result as string);
+        onClose();
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      <div className="flex items-center justify-center gap-4 py-2">
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="Avatar" className="w-20 h-20 rounded-full object-cover animate-fade-in" style={{ border: `2px solid ${c.red}` }} />
+        ) : (
+          <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold" style={{ background: bg }}>
+            {init}
+          </div>
+        )}
+      </div>
+      
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary }}>Initials</label>
+        <input
+          type="text"
+          value={init}
+          maxLength={2}
+          onChange={e => setInit(e.target.value.toUpperCase())}
+          className="w-full p-2 rounded-lg outline-none"
+          style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, color: c.text }}
+        />
+      </div>
+
+      <div>
+        <label className="text-xs block mb-1.5" style={{ color: c.secondary }}>Background Color</label>
+        <div className="flex gap-2 flex-wrap">
+          {colors.map(col => (
+            <button
+              key={col}
+              onClick={() => { setBg(col); setAvatarUrl(null); }}
+              className="w-8 h-8 rounded-full border-2 cursor-pointer transition-transform hover:scale-110"
+              style={{ background: col, borderColor: bg === col ? (c.d ? "#fff" : "#000") : "transparent" }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs block mb-1.5" style={{ color: c.secondary }}>Upload Custom Photo</label>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          style={{ fontSize: 13, color: c.text }}
+        />
+      </div>
+
+      <div className="flex gap-2 justify-end mt-2">
+        {avatarUrl && (
+          <button onClick={() => { setAvatarUrl(null); }} className="px-3 py-1.5 rounded-lg text-xs cursor-pointer mr-auto" style={{ border: `1px solid ${c.red}`, color: c.red }}>
+            Remove photo
+          </button>
+        )}
+        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm cursor-pointer" style={{ color: c.secondary }}>Cancel</button>
+        <button onClick={() => { setAvatarInitials(init); setAvatarBgColor(bg); onClose(); }} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Apply
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ChangeCaregiverModal = ({
+  name, setName,
+  relation, setRelation,
+  initials, setInitials,
+  color, setColor,
+  onClose
+}: any) => {
+  const c = useColors();
+  const [tempName, setTempName] = useState(name);
+  const [tempRel, setTempRel] = useState(relation);
+  const [tempInit, setTempInit] = useState(initials);
+  const [tempCol, setTempCol] = useState(color);
+  
+  const colors = ["#E8304A", "#5B8AF0", "#27C28A", "#F5A623", "#6B7499"];
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      <div className="flex items-center gap-3 p-3 rounded-lg border" style={{ background: c.cardElevated, borderColor: c.divider }}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{ background: tempCol }}>
+          {tempInit}
+        </div>
+        <div>
+          <div className="font-semibold" style={{ color: c.text }}>{tempName || "Caregiver Name"}</div>
+          <div className="text-xs" style={{ color: c.secondary }}>{tempRel || "Relationship"}</div>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary }}>Caregiver Name</label>
+        <input
+          type="text"
+          value={tempName}
+          onChange={e => {
+            setTempName(e.target.value);
+            if(e.target.value) {
+              const parts = e.target.value.split(" ");
+              const initialsVal = parts.map((n: string) => n[0] || "").join("").toUpperCase().slice(0,2);
+              setTempInit(initialsVal);
+            }
+          }}
+          className="w-full p-2 rounded-lg outline-none"
+          style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, color: c.text }}
+        />
+      </div>
+
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary }}>Relationship</label>
+        <input
+          type="text"
+          value={tempRel}
+          onChange={e => setTempRel(e.target.value)}
+          className="w-full p-2 rounded-lg outline-none"
+          style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, color: c.text }}
+        />
+      </div>
+
+      <div>
+        <label className="text-xs block mb-1.5" style={{ color: c.secondary }}>Theme Color</label>
+        <div className="flex gap-2">
+          {colors.map(col => (
+            <button
+              key={col}
+              onClick={() => setTempCol(col)}
+              className="w-7 h-7 rounded-full border-2 cursor-pointer transition-transform hover:scale-110"
+              style={{ background: col, borderColor: tempCol === col ? (c.d ? "#fff" : "#000") : "transparent" }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-2 justify-end mt-2">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm cursor-pointer" style={{ color: c.secondary }}>Cancel</button>
+        <button onClick={() => {
+          setName(tempName);
+          setRelation(tempRel);
+          setInitials(tempInit);
+          setColor(tempCol);
+          onClose();
+        }} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ViewECGModal = ({ alertItem, onClose }: { alertItem: any; onClose: () => void }) => {
+  const c = useColors();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.strokeStyle = c.d ? "rgba(100,120,200,0.08)" : "rgba(0,0,0,0.04)";
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x < w; x += 15) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < h; y += 15) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = alertItem.color || c.red;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+
+    const isHighHR = alertItem.type.includes("High HR");
+    const isAnomaly = alertItem.type.includes("Rhythm") || alertItem.type.includes("HRV");
+
+    const ecgPattern = (x: number): number => {
+      const period = isHighHR ? 50 : 80;
+      const p = x % period;
+      if (p < 5) return 0;
+      if (p < 12) return Math.sin((p - 5) / 7 * Math.PI) * 0.15;
+      if (p < 18) return 0;
+      if (p < 22) return -0.12;
+      
+      if (isAnomaly && x > 200 && x < 280) {
+        return (Math.random() - 0.5) * 0.08;
+      }
+
+      if (p < 25) return 0.85; 
+      if (p < 28) return -0.4;  
+      if (p < 38) return 0;
+      if (p < 46) return Math.sin((p - 38) / 8 * Math.PI) * 0.22; 
+      return 0;
+    };
+
+    for (let x = 0; x < w; x++) {
+      const val = ecgPattern(x);
+      const y = h / 2 - val * (h * 0.38);
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }, [alertItem, c.d, c.red]);
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      <div className="p-3 rounded-lg" style={{ background: c.cardElevated }}>
+        <div className="flex justify-between items-center mb-1">
+          <span className="font-semibold" style={{ color: c.text }}>{alertItem.type}</span>
+          <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: `${alertItem.color}20`, color: alertItem.color }}>Captured telemetry</span>
+        </div>
+        <div className="text-xs" style={{ color: c.secondary }}>Timestamp: {alertItem.date} at {alertItem.time}</div>
+      </div>
+      
+      <div className="rounded-lg overflow-hidden" style={{ background: c.d ? "#090C16" : "#fdfdfd", border: `1px solid ${c.divider}` }}>
+        <canvas ref={canvasRef} width={450} height={160} className="w-full h-[160px]" />
+      </div>
+
+      <div className="text-xs leading-relaxed" style={{ color: c.secondary }}>
+        * Waveform captured from Lead II. Real-time diagnostic data is stored locally and securely uploaded to your medical profile for physician review.
+      </div>
+
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PerMemberAlertsModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  const [members, setMembers] = useLocalStorage("cs_per_member_alerts", [
+    { name: "Rehnuma (Daughter)", push: true, sms: true, call: true },
+    { name: "Rumi (Son)", push: true, sms: true, call: false },
+    { name: "Jabed (Spouse)", push: false, sms: true, call: false },
+  ]);
+
+  const toggleVal = (index: number, key: 'push' | 'sms' | 'call') => {
+    setMembers(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [key]: !copy[index][key] };
+      return copy;
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      <p style={{ color: c.secondary, fontSize: 13 }}>Configure individual alert settings for each family member in your circle.</p>
+      
+      <div className="flex flex-col gap-3">
+        {members.map((m, i) => (
+          <div key={m.name} className="p-3 rounded-lg border flex flex-col gap-2.5" style={{ background: c.cardElevated, borderColor: c.divider }}>
+            <span className="font-semibold" style={{ color: c.text, fontSize: 14 }}>{m.name}</span>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: c.text }}>
+                <Toggle size="sm" on={m.push} onToggle={() => toggleVal(i, 'push')} /> Push
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: c.text }}>
+                <Toggle size="sm" on={m.sms} onToggle={() => toggleVal(i, 'sms')} /> SMS
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: c.text }}>
+                <Toggle size="sm" on={m.call} onToggle={() => toggleVal(i, 'call')} /> Call
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const RecalibrateBaselineModal = ({
+  setBaselineDate,
+  setBaselineRange,
+  onClose
+}: any) => {
+  const c = useColors();
+  const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState("Initializing electrodes...");
+
+  useEffect(() => {
+    const stages = [
+      "Initializing electrodes...",
+      "Analyzing signal quality...",
+      "Measuring resting heart rate...",
+      "Correlating HRV patterns...",
+      "Finalizing new baseline baseline..."
+    ];
+    let count = 0;
+    const interval = setInterval(() => {
+      count += 2;
+      setProgress(count);
+      
+      const idx = Math.floor((count / 100) * stages.length);
+      if (stages[idx]) setStage(stages[idx]);
+
+      if (count >= 100) {
+        clearInterval(interval);
+        const today = new Date();
+        const formattedDate = `${today.getDate()} ${today.toLocaleString('en-US', { month: 'short' })} ${today.getFullYear()}`;
+        setBaselineDate(formattedDate);
+        const minHR = Math.floor(Math.random() * 8) + 55; 
+        const maxHR = minHR + Math.floor(Math.random() * 6) + 12; 
+        setBaselineRange(`${minHR}–${maxHR} BPM`);
+        setTimeout(() => {
+          onClose();
+          alert("Baseline recalibrated successfully!");
+        }, 600);
+      }
+    }, 60);
+
+    return () => clearInterval(interval);
+  }, [onClose, setBaselineDate, setBaselineRange]);
+
+  return (
+    <div className="flex flex-col gap-4 text-center py-4" style={{ fontFamily: "Syne, sans-serif" }}>
+      <div className="flex justify-center mb-2">
+        <Heart size={48} className="animate-pulse" style={{ color: c.red }} />
+      </div>
+      <div className="font-semibold text-lg" style={{ color: c.text }}>Recalibrating Baseline</div>
+      <p style={{ color: c.secondary, fontSize: 13 }}>Please sit still and breathe normally. This takes a few seconds.</p>
+      
+      <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 mt-4 overflow-hidden">
+        <div className="h-2.5 rounded-full" style={{ width: `${progress}%`, background: c.red, transition: "width 0.1s" }} />
+      </div>
+      <div className="text-xs font-mono" style={{ color: c.muted }}>{progress}% - {stage}</div>
+    </div>
+  );
+};
+
+const AIDisclosureModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ color: c.secondary, fontFamily: "Syne, sans-serif" }}>
+      <div style={{ color: c.text, fontWeight: 600 }}>1. Intended Use & Clinical Scope</div>
+      <p className="leading-relaxed">
+        CardiShirt Neural v3.2 is a localized deep learning software application designed to analyze multi-lead ECG signals. It is intended for use by patients under clinical guidance to capture and review cardiac rhythm trends. It is NOT a diagnostic tool. Do NOT alter medications or treatment plans without consulting your cardiologist.
+      </p>
+      
+      <div style={{ color: c.text, fontWeight: 600 }}>2. Algorithm Performance & Certification</div>
+      <p className="leading-relaxed">
+        The underlying neural network is trained on over 500,000 clinical ECG records, achieving a 98.4% sensitivity for premature ventricular contractions (PVCs) and atrial fibrillation detection. The model operates under Class IIa medical software guidance.
+      </p>
+
+      <div style={{ color: c.text, fontWeight: 600 }}>3. Data Privacy & Device Sovereignty</div>
+      <p className="leading-relaxed">
+        All real-time telemetry processing is performed locally on the paired mobile device. Telemetry data is only uploaded to the cloud if explicit physician syncing is enabled or during automated emergency dispatch triggers.
+      </p>
+
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PrivacyPolicyModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ color: c.secondary, fontFamily: "Syne, sans-serif" }}>
+      <p className="leading-relaxed">
+        At CardiShirt, patient data sovereignty is our core value. We believe you own your medical data.
+      </p>
+      <div style={{ color: c.text, fontWeight: 600 }}>1. Data We Collect</div>
+      <p className="leading-relaxed">
+        We collect ECG signal data, heart rate metrics, physical activity logs, and personal profile information to establish baselines.
+      </p>
+      <div style={{ color: c.text, fontWeight: 600 }}>2. How We Share It</div>
+      <p className="leading-relaxed">
+        Data is only shared with designated caregivers and registered healthcare providers. Anonymous clinical telemetry may be shared with quality assurance teams only with explicit consent. We never sell data to advertisers or insurers.
+      </p>
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ManageStorageModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  const [sizes, setSizes] = useState({ ecg: "2.1 GB", logs: "150 MB", cache: "150 KB" });
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      <p style={{ color: c.secondary }}>Clean up local storage by purging diagnostic logs or cached telemetry data. Critical clinical records are stored securely on the server.</p>
+      
+      <div className="flex flex-col gap-3">
+        {[
+          { id: "ecg", l: "Raw ECG Waveform Data", desc: "Stored local telemetry stream", size: sizes.ecg },
+          { id: "logs", l: "Daily Activity Logs", desc: "Local history and daily check-ins", size: sizes.logs },
+          { id: "cache", l: "Diagnostic Sensor Cache", desc: "Cached firmware statistics", size: sizes.cache }
+        ].map(item => (
+          <div key={item.id} className="flex justify-between items-center p-3 rounded-lg border" style={{ background: c.cardElevated, borderColor: c.divider }}>
+            <div>
+              <div className="font-semibold" style={{ color: c.text }}>{item.l}</div>
+              <div className="text-xs" style={{ color: c.secondary }}>{item.desc}</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs font-semibold" style={{ color: c.text }}>{item.size}</span>
+              {item.size !== "0 KB" && item.size !== "0 MB" && item.size !== "0 GB" && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Are you sure you want to delete local ${item.l}?`)) {
+                      setSizes(prev => ({ ...prev, [item.id]: "0 KB" }));
+                    }
+                  }}
+                  style={{ color: c.red }}
+                  className="p-1 hover:opacity-85 text-xs font-semibold cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ExportDataModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let current = 0;
+    const interval = setInterval(() => {
+      current += 5;
+      setProgress(current);
+      if (current >= 100) {
+        clearInterval(interval);
+        setDone(true);
+        const element = document.createElement("a");
+        const file = new Blob([JSON.stringify({
+          patient: "Adnan Uddin",
+          bloodType: "B+",
+          sensorSN: "CS-2026-DK-00142",
+          vitals: { restingHR: "58-74", established: "12 Feb 2026" }
+        }, null, 2)], { type: 'text/plain' });
+        element.href = URL.createObjectURL(file);
+        element.download = "cardishirt_health_data.json";
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-4 text-center py-4" style={{ fontFamily: "Syne, sans-serif" }}>
+      {!done ? (
+        <>
+          <div className="flex justify-center mb-2 animate-bounce">
+            <Download size={40} style={{ color: c.blue }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Exporting Clinical Profile</div>
+          <p style={{ color: c.secondary, fontSize: 13 }}>Compiling full ECG history, check-in narratives, and device reports into JSON format...</p>
+          <div className="w-full bg-gray-200 rounded-full h-2 mt-4 overflow-hidden dark:bg-gray-700">
+            <div className="h-2 rounded-full" style={{ width: `${progress}%`, background: c.blue }} />
+          </div>
+          <span className="text-xs font-mono" style={{ color: c.muted }}>{progress}%</span>
+        </>
+      ) : (
+        <>
+          <div className="flex justify-center mb-2">
+            <CheckCircle size={48} style={{ color: c.green }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Export Complete</div>
+          <p style={{ color: c.secondary, fontSize: 13 }}>Your file <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">cardishirt_health_data.json</code> has been generated and downloaded successfully.</p>
+          <div className="flex justify-center gap-2 mt-4">
+            <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+              Done
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const ChangePINModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  const [pin, setPin] = useLocalStorage("cs_app_pin", "1234");
+  const [oldPin, setOldPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSave = () => {
+    if (oldPin !== pin) {
+      setError("Current PIN is incorrect.");
+      return;
+    }
+    if (newPin.length !== 4 || isNaN(+newPin)) {
+      setError("New PIN must be a 4-digit number.");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setError("New PIN verification does not match.");
+      return;
+    }
+    setPin(newPin);
+    alert("Application PIN changed successfully!");
+    onClose();
+  };
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      {error && <div className="p-2.5 rounded-lg text-xs font-semibold" style={{ background: `${c.red}10`, color: c.red }}>{error}</div>}
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary }}>Current 4-Digit PIN</label>
+        <input
+          type="password"
+          maxLength={4}
+          value={oldPin}
+          onChange={e => { setError(""); setOldPin(e.target.value); }}
+          className="w-full p-2 rounded-lg font-mono text-center tracking-widest outline-none border"
+          style={{ background: c.inputBg, borderColor: c.inputBorder, color: c.text }}
+        />
+      </div>
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary }}>New 4-Digit PIN</label>
+        <input
+          type="password"
+          maxLength={4}
+          value={newPin}
+          onChange={e => { setError(""); setNewPin(e.target.value); }}
+          className="w-full p-2 rounded-lg font-mono text-center tracking-widest outline-none border"
+          style={{ background: c.inputBg, borderColor: c.inputBorder, color: c.text }}
+        />
+      </div>
+      <div>
+        <label className="text-xs block mb-1" style={{ color: c.secondary }}>Confirm New PIN</label>
+        <input
+          type="password"
+          maxLength={4}
+          value={confirmPin}
+          onChange={e => { setError(""); setConfirmPin(e.target.value); }}
+          className="w-full p-2 rounded-lg font-mono text-center tracking-widest outline-none border"
+          style={{ background: c.inputBg, borderColor: c.inputBorder, color: c.text }}
+        />
+      </div>
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg cursor-pointer" style={{ color: c.secondary }}>Cancel</button>
+        <button onClick={handleSave} className="px-4 py-2 rounded-lg font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Save PIN
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ManageContactsModal = ({ contacts, setContacts, onClose }: any) => {
+  const c = useColors();
+  const [tempContacts, setTempContacts] = useState(contacts);
+
+  const moveContact = (index: number, direction: 'up' | 'down') => {
+    const copy = [...tempContacts];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= copy.length) return;
+    const temp = copy[index];
+    copy[index] = copy[targetIndex];
+    copy[targetIndex] = temp;
+    const updated = copy.map((item, idx) => ({ ...item, pri: idx + 1 }));
+    setTempContacts(updated);
+  };
+
+  const deleteContact = (index: number) => {
+    if (confirm(`Remove ${tempContacts[index].name} from emergency contacts?`)) {
+      const filtered = tempContacts.filter((_: any, idx: number) => idx !== index);
+      const updated = filtered.map((item: any, idx: number) => ({ ...item, pri: idx + 1 }));
+      setTempContacts(updated);
+    }
+  };
+
+  const handleSave = () => {
+    setContacts(tempContacts);
+    onClose();
+  };
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      <p style={{ color: c.secondary }}>Configure emergency contact notification priorities. The primary contact will be reached first.</p>
+      
+      <div className="flex flex-col gap-2">
+        {tempContacts.map((m: any, i: number) => (
+          <div key={m.name} className="flex items-center gap-3 p-3 rounded-lg border" style={{ background: c.cardElevated, borderColor: c.divider }}>
+            <span className="flex items-center justify-center flex-shrink-0" style={{
+              width: 22, height: 22, borderRadius: 11,
+              background: m.pri === 1 ? `${c.red}20` : c.strip,
+              fontFamily: "DM Mono, monospace", fontSize: 11,
+              color: m.pri === 1 ? c.red : c.muted,
+            }}>{m.pri}</span>
+            <div className="flex-1">
+              <div className="font-semibold" style={{ color: c.text }}>{m.name}</div>
+              <div className="text-xs" style={{ color: c.secondary }}>{m.role}</div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button disabled={i === 0} onClick={() => moveContact(i, 'up')} style={{ color: i === 0 ? c.muted : c.text }} className="p-1 hover:opacity-85 cursor-pointer">
+                <ArrowUp size={14} />
+              </button>
+              <button disabled={i === tempContacts.length - 1} onClick={() => moveContact(i, 'down')} style={{ color: i === tempContacts.length - 1 ? c.muted : c.text }} className="p-1 hover:opacity-85 cursor-pointer">
+                <ArrowDown size={14} />
+              </button>
+              <button onClick={() => deleteContact(i)} style={{ color: c.red }} className="p-1 hover:opacity-85 cursor-pointer ml-1">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-2 mt-2">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg cursor-pointer" style={{ color: c.secondary }}>Cancel</button>
+        <button onClick={handleSave} className="px-4 py-2 rounded-lg font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+          Save Priority
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const CheckUpdatesModal = ({ onClose }: { onClose: () => void }) => {
+  const c = useColors();
+  const [status, setStatus] = useState("Connecting to server...");
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const steps = ["Connecting to server...", "Verifying checksums...", "Checking for updates...", "App is up to date (v2.8.0)"];
+    let count = 0;
+    const interval = setInterval(() => {
+      count += 5;
+      setProgress(count);
+      const idx = Math.floor((count / 100) * steps.length);
+      if (steps[idx]) setStatus(steps[idx]);
+      if (count >= 100) {
+        clearInterval(interval);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-4 text-center py-4" style={{ fontFamily: "Syne, sans-serif" }}>
+      {progress < 100 ? (
+        <>
+          <div className="flex justify-center mb-2">
+            <RefreshCw size={36} className="animate-spin" style={{ color: c.blue }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Checking for Updates</div>
+          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden dark:bg-gray-700">
+            <div className="h-2 rounded-full" style={{ width: `${progress}%`, background: c.blue }} />
+          </div>
+          <span className="text-xs font-mono" style={{ color: c.muted }}>{status}</span>
+        </>
+      ) : (
+        <>
+          <div className="flex justify-center mb-2">
+            <CheckCircle size={48} style={{ color: c.green }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>App Up To Date</div>
+          <p style={{ color: c.secondary, fontSize: 13 }}>Your CardiShirt mobile application is running the latest stable release (v2.8.0).</p>
+          <div className="flex justify-center mt-2">
+            <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+              Done
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const SupportModal = ({ label, onClose }: { label: string; onClose: () => void }) => {
+  const c = useColors();
+  const [msg, setMsg] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  if (label === "Terms of service" || label === "Privacy policy" || label === "Regulatory information") {
+    return (
+      <div className="flex flex-col gap-3 text-sm leading-relaxed" style={{ color: c.secondary, fontFamily: "Syne, sans-serif" }}>
+        <p>This document details the CardiShirt legal, medical, and clinical compliance protocols.</p>
+        <p>For official inquiries or records requests, contact compliance@cardishirt.com or consult your clinical supervisor.</p>
+        <div className="flex justify-end mt-2">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (label === "Help center") {
+    const faqs = [
+      { q: "How often should I test the shirt?", a: "We recommend running a test once a week, or whenever you wash the shirt and put it back on." },
+      { q: "What should I do if a lead signal is weak?", a: "Ensure the electrode patch is in direct contact with skin and the shirt is snug. Avoid thick body hair or excessive sweat." },
+      { q: "Can the shirt be washed?", a: "Yes, make sure to remove the transmitter pod before machine washing on a gentle cycle. Air dry only." }
+    ];
+    return (
+      <div className="flex flex-col gap-3 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+        {faqs.map(f => (
+          <div key={f.q} className="p-3 rounded-lg border" style={{ background: c.cardElevated, borderColor: c.divider }}>
+            <div className="font-semibold mb-1" style={{ color: c.text }}>{f.q}</div>
+            <div style={{ color: c.secondary }}>{f.a}</div>
+          </div>
+        ))}
+        <div className="flex justify-end mt-2">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      {!submitted ? (
+        <>
+          <label style={{ color: c.secondary }}>Enter details to submit a request to the CardiShirt technical team:</label>
+          <textarea
+            value={msg}
+            rows={4}
+            onChange={e => setMsg(e.target.value)}
+            className="w-full p-2.5 rounded-lg outline-none border"
+            style={{ background: c.inputBg, borderColor: c.inputBorder, color: c.text }}
+            placeholder={label === "Report a problem" ? "Describe the bug or connection issue..." : "How can we help you today?"}
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg cursor-pointer" style={{ color: c.secondary }}>Cancel</button>
+            <button disabled={!msg} onClick={() => setSubmitted(true)} className="px-4 py-2 rounded-lg font-semibold cursor-pointer" style={{ background: c.red, color: "#fff", opacity: msg ? 1 : 0.5 }}>
+              Submit
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="text-center py-4 flex flex-col gap-3">
+          <div className="flex justify-center"><CheckCircle size={40} style={{ color: c.green }} /></div>
+          <div className="font-semibold text-base" style={{ color: c.text }}>Ticket Submitted</div>
+          <p style={{ color: c.secondary }}>Thank you for reaching out. A customer support representative will contact you via email or phone within 24 hours.</p>
+          <div className="flex justify-center mt-2">
+            <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>Close</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /* ════════════════════════════════════════════
    SHARED TINY COMPONENTS
@@ -218,7 +1044,18 @@ function CategoryNav({ active, onSelect }: { active: Category; onSelect: (c: Cat
 /* ════════════════════════════════════════════
    1. PROFILE & ACCOUNT
    ════════════════════════════════════════════ */
-function ProfileSection() {
+function ProfileSection({
+  openModal,
+  phone, setPhone,
+  email, setEmail,
+  caregiverName, setCaregiverName,
+  caregiverRelation, setCaregiverRelation,
+  caregiverInitials, setCaregiverInitials,
+  caregiverColor, setCaregiverColor,
+  avatarInitials, setAvatarInitials,
+  avatarBgColor, setAvatarBgColor,
+  avatarUrl, setAvatarUrl
+}: any) {
   const c = useColors();
   const [editing, setEditing] = useState(false);
   const [caregiverOn, setCaregiverOn] = useLocalStorage("cs_caregiver", true);
@@ -260,12 +1097,29 @@ function ProfileSection() {
       <SectionCard title="Patient Profile" icon={<User size={18} />} iconColor="#5B8AF0">
         <div className="flex items-start gap-5 mb-4">
           <div className="relative flex-shrink-0">
-            <div className="flex items-center justify-center" style={{
-              width: 80, height: 80, borderRadius: 40, background: "#5B8AF0",
-              color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 28, fontWeight: 500,
-            }}>{firstName.substring(0, 1).toUpperCase()}{lastName.substring(0, 1).toUpperCase()}</div>
-            <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center"
-              style={{ background: c.cardBg, borderWidth: 1.5, borderStyle: "solid", borderColor: c.cardBorder }}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="w-20 h-20 rounded-full object-cover" />
+            ) : (
+              <div className="flex items-center justify-center" style={{
+                width: 80, height: 80, borderRadius: 40, background: avatarBgColor,
+                color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 28, fontWeight: 500,
+              }}>{avatarInitials || (firstName.substring(0, 1).toUpperCase() + lastName.substring(0, 1).toUpperCase())}</div>
+            )}
+            <button
+              onClick={() => openModal("Change Profile Picture", (
+                <ChangeAvatarModal
+                  avatarInitials={avatarInitials || (firstName.substring(0, 1).toUpperCase() + lastName.substring(0, 1).toUpperCase())}
+                  setAvatarInitials={setAvatarInitials}
+                  avatarBgColor={avatarBgColor}
+                  setAvatarBgColor={setAvatarBgColor}
+                  avatarUrl={avatarUrl}
+                  setAvatarUrl={setAvatarUrl}
+                  onClose={() => openModal("", null)}
+                />
+              ))}
+              className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
+              style={{ background: c.cardBg, borderWidth: 1.5, borderStyle: "solid", borderColor: c.cardBorder }}
+            >
               <Camera size={13} style={{ color: c.secondary }} />
             </button>
           </div>
@@ -278,7 +1132,7 @@ function ProfileSection() {
             </div>
           </div>
         </div>
-        <button onClick={() => setEditing(!editing)} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.red }}>
+        <button onClick={() => setEditing(!editing)} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.red, cursor: "pointer" }}>
           <Edit2 size={12} className="inline mr-1" />{editing ? "Close editor" : "Edit profile"}
         </button>
         {editing && (
@@ -324,7 +1178,7 @@ function ProfileSection() {
             <p style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, lineHeight: 1.6 }}>
               This information helps CardiShirt AI personalize your risk analysis. It is never shared without your permission.
             </p>
-            <button onClick={handleSaveProfile} className="self-start px-5 py-2 rounded-lg active:scale-95 transition-all font-semibold" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Save changes</button>
+            <button onClick={handleSaveProfile} className="self-start px-5 py-2 rounded-lg active:scale-95 transition-all font-semibold cursor-pointer" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>Save changes</button>
           </div>
         )}
       </SectionCard>
@@ -333,14 +1187,28 @@ function ProfileSection() {
       <SectionCard title="Account Details" icon={<Mail size={18} />} iconColor="#5B8AF0">
         <SettingRow label="Phone Number" desc="Primary identifier for your account">
           <div className="flex items-center gap-2">
-            <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>+880 1712-345678</span>
-            <TextLink label="Edit" color={c.red} />
+            <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{phone}</span>
+            <TextLink label="Edit" color={c.red} onClick={() => openModal("Edit Phone Number", (
+              <EditFieldModal
+                label="Phone Number"
+                initialValue={phone}
+                onSave={setPhone}
+                onClose={() => openModal("", null)}
+              />
+            ))} />
           </div>
         </SettingRow>
         <SettingRow label="Email Address">
           <div className="flex items-center gap-2">
-            <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>rahim@email.com</span>
-            <TextLink label="Edit" color={c.red} />
+            <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{email}</span>
+            <TextLink label="Edit" color={c.red} onClick={() => openModal("Edit Email Address", (
+              <EditFieldModal
+                label="Email Address"
+                initialValue={email}
+                onSave={setEmail}
+                onClose={() => openModal("", null)}
+              />
+            ))} />
           </div>
         </SettingRow>
         <div className="pt-3">
@@ -356,12 +1224,26 @@ function ProfileSection() {
         </SettingRow>
         {caregiverOn && (
           <div className="mt-3 p-3 rounded-lg flex items-center gap-3" style={{ background: c.cardElevated }}>
-            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}>FK</div>
-            <div>
-              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text }}>Rehnuma</div>
-              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>Daughter · Active caregiver</div>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold" style={{ background: caregiverColor, fontFamily: "Syne, sans-serif", fontSize: 14 }}>
+              {caregiverInitials}
             </div>
-            <TextLink label="Change" color={c.red} />
+            <div className="flex-1">
+              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text }}>{caregiverName}</div>
+              <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>{caregiverRelation} · Active caregiver</div>
+            </div>
+            <TextLink label="Change" color={c.red} onClick={() => openModal("Change Caregiver Access", (
+              <ChangeCaregiverModal
+                name={caregiverName}
+                setName={setCaregiverName}
+                relation={caregiverRelation}
+                setRelation={setCaregiverRelation}
+                initials={caregiverInitials}
+                setInitials={setCaregiverInitials}
+                color={caregiverColor}
+                setColor={setCaregiverColor}
+                onClose={() => openModal("", null)}
+              />
+            ))} />
           </div>
         )}
       </SectionCard>
@@ -371,7 +1253,7 @@ function ProfileSection() {
         <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 500, color: c.muted, marginBottom: 12, display: "block" }}>Danger Zone</span>
         <div className="flex items-center gap-6">
           <TextLink label="Delete account" color={c.red} onClick={() => {if(window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) alert("Account deletion request submitted.");}} />
-          <TextLink label="Export all my data" color={c.blue} onClick={() => alert("Data export started. You will receive an email when it is ready.")} />
+          <TextLink label="Export all my data" color={c.blue} onClick={() => openModal("Export All Patient Data", <ExportDataModal onClose={() => openModal("", null)} />)} />
         </div>
       </div>
     </>
@@ -434,8 +1316,12 @@ function MiniWaveform({ status, width = 40, height = 24 }: { status: LeadStatus;
   return <canvas ref={canvasRef} width={width} height={height} />;
 }
 
-function DeviceSection() {
+function DeviceSection({ openModal }: any) {
   const c = useColors();
+  const [shirtName, setShirtName] = useLocalStorage("cs_shirt_name", "CardiShirt Pro · 3-Lead");
+  const [shirtSN, setShirtSN] = useLocalStorage("cs_shirt_sn", "CS-2026-DK-00142");
+  const [firmwareVersion, setFirmwareVersion] = useLocalStorage("cs_firmware_version", "v2.4.1");
+  const [firmwareDate, setFirmwareDate] = useLocalStorage("cs_firmware_date", "18 Mar 2026");
   const [testPhase, setTestPhase] = useState<"idle" | "step1" | "step2" | "results">("idle");
   const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>(LEAD_NAMES.map(() => "idle"));
   const [progress, setProgress] = useState(0);
@@ -502,8 +1388,8 @@ function DeviceSection() {
       <SectionCard title="Device Status" icon={<Shirt size={18} />} iconColor={c.red}>
         <div className="flex items-start gap-4 mb-4">
           <div className="flex-1">
-            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500, color: c.text }}>CardiShirt Pro · 3-Lead</div>
-            <div style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: c.secondary }}>SN: CS-2026-DK-00142</div>
+            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500, color: c.text }}>{shirtName}</div>
+            <div style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: c.secondary }}>SN: {shirtSN}</div>
           </div>
           <div className="flex items-center gap-1.5">
             <Wifi size={14} style={{ color: c.green }} />
@@ -522,7 +1408,7 @@ function DeviceSection() {
             </div>
           ))}
         </div>
-        <button onClick={()=>{const name=prompt("Enter the Bluetooth or Serial Name of your CardiShirt (e.g. CS-2026-PRO):");if(name)alert(`Shirt ${name} paired successfully via Bluetooth! Vitals and ECG telemetry are now connected.`);}} className="px-4 py-2 rounded-lg active:scale-95 transition-all" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, background: "transparent" }}>
+        <button onClick={() => openModal("Pair CardiShirt Device", <PairShirtModal setShirtName={setShirtName} setShirtSN={setShirtSN} onClose={() => openModal("", null)} />)} className="px-4 py-2 rounded-lg active:scale-95 transition-all cursor-pointer" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, background: "transparent" }}>
           Pair a new shirt
         </button>
       </SectionCard>
@@ -635,10 +1521,21 @@ function DeviceSection() {
                       : "Lead III has a weak signal. Make sure the electrode patch on your left leg is flat against your skin, then run the test again."}
                   </p>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <button className="px-5 py-2.5 rounded-lg" style={{ background: weakCount === 0 ? c.green : c.amber, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}>
+                    <button
+                      onClick={() => {
+                        if (weakCount === 0) {
+                          alert("Monitoring started successfully! Your real-time vitals and ECG telemetry are now active.");
+                          cancelTest();
+                        } else {
+                          startTest();
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-lg cursor-pointer hover:opacity-90 active:scale-95 transition-transform"
+                      style={{ background: weakCount === 0 ? c.green : c.amber, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}
+                    >
                       {weakCount === 0 ? "Start monitoring" : "Test again"}
                     </button>
-                    <button onClick={cancelTest} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: "#8890B8" }}>Close</button>
+                    <button onClick={cancelTest} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: "#8890B8", cursor: "pointer" }}>Close</button>
                   </div>
                 </div>
               )}
@@ -702,12 +1599,12 @@ function DeviceSection() {
         <div className="flex items-center gap-4 mb-3">
           <div>
             <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Firmware version</span>
-            <span className="ml-2" style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>v2.4.1</span>
+            <span className="ml-2" style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{firmwareVersion}</span>
           </div>
-          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>Updated 18 Mar 2026</span>
+          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>Updated {firmwareDate}</span>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={()=>alert("Checking for CardiShirt firmware updates... Your shirt is already running the latest version (v2.4.1).")} className="px-4 py-2 rounded-lg active:scale-95 transition-all" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>Check for updates</button>
+          <button onClick={() => openModal("CardiShirt Firmware Update", <CheckFirmwareUpdatesModal currentVersion={firmwareVersion} setFirmwareVersion={setFirmwareVersion} setFirmwareDate={setFirmwareDate} onClose={() => openModal("", null)} />)} className="px-4 py-2 rounded-lg active:scale-95 transition-all cursor-pointer" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>Check for updates</button>
           <TextLink label="Reset shirt connection" color={c.red} onClick={()=>{if(confirm("Are you sure you want to reset the CardiShirt Bluetooth connection?"))alert("Bluetooth connection reset. Reconnecting to shirt...");}} />
           <TextLink label="Clear cached sensor data" color={c.secondary} onClick={()=>{if(confirm("Are you sure you want to clear cached sensor data from the device? This will free up local storage space on the shirt's built-in flash memory."))alert("Local sensor cache cleared successfully.");}} />
         </div>
@@ -768,7 +1665,7 @@ function ECGLiveStrip() {
 /* ════════════════════════════════════════════
    3. ALERTS & NOTIFICATIONS
    ════════════════════════════════════════════ */
-function AlertsSection() {
+function AlertsSection({ openModal, alerts, setAlerts }: any) {
   const c = useColors();
   const [highHR, setHighHR] = useLocalStorage("cs_highHR", 120);
   const [lowHR, setLowHR] = useLocalStorage("cs_lowHR", 45);
@@ -781,14 +1678,6 @@ function AlertsSection() {
   const [familyOn, setFamilyOn] = useLocalStorage("cs_familyOn", true);
   const [quietOn, setQuietOn] = useLocalStorage("cs_quietOn", false);
   const [emergOverride, setEmergOverride] = useLocalStorage("cs_emergOverride", true);
-
-  const ALERT_HIST = [
-    { date: "3 Apr 2026", time: "2:14 PM", type: "High HR Alert", color: "#E8304A" },
-    { date: "3 Apr 2026", time: "11:30 AM", type: "Rhythm Anomaly", color: "#F5A623" },
-    { date: "1 Apr 2026", time: "3:47 PM", type: "HRV Drop", color: "#5B8AF0" },
-    { date: "30 Mar 2026", time: "8:12 AM", type: "High HR Alert", color: "#E8304A" },
-    { date: "28 Mar 2026", time: "6:01 PM", type: "Rhythm Anomaly", color: "#F5A623" },
-  ];
 
   return (
     <>
@@ -830,7 +1719,9 @@ function AlertsSection() {
         <SettingRow label="Family circle alerts" desc="Master on/off for all family members">
           <div className="flex items-center gap-3">
             <Toggle on={familyOn} onToggle={() => setFamilyOn(!familyOn)} />
-            <TextLink label="Per-member →" color={c.red} />
+            <TextLink label="Per-member →" color={c.red} onClick={() => openModal("Per-Member Alert Configuration", (
+              <PerMemberAlertsModal onClose={() => openModal("", null)} />
+            ))} />
           </div>
         </SettingRow>
         <SettingRow label="Quiet hours" desc="Suppress non-critical notifications during this window">
@@ -861,18 +1752,32 @@ function AlertsSection() {
       </SectionCard>
 
       <SectionCard title="Alert History" icon={<History size={18} />} iconColor={c.secondary}>
-        <div className="flex flex-col gap-1.5">
-          {ALERT_HIST.map((a, i) => (
-            <div key={`alert-${i}`} className="flex items-center gap-3 py-2" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: c.divider }}>
-              <div style={{ width: 8, height: 8, borderRadius: 4, background: a.color, flexShrink: 0 }} />
-              <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>{a.date}</span>
-              <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>{a.time}</span>
-              <span className="flex-1" style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>{a.type}</span>
-              <TextLink label="View ECG" color={c.blue} />
-            </div>
-          ))}
-        </div>
-        <div className="mt-3"><TextLink label="Clear alert history" color={c.muted} /></div>
+        {alerts.length === 0 ? (
+          <div className="py-6 text-center text-sm font-semibold" style={{ color: c.muted, fontFamily: "Syne, sans-serif" }}>No alerts logged yet.</div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {alerts.map((a: any, i: number) => (
+              <div key={`alert-${i}`} className="flex items-center gap-3 py-2" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: c.divider }}>
+                <div style={{ width: 8, height: 8, borderRadius: 4, background: a.color, flexShrink: 0 }} />
+                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>{a.date}</span>
+                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>{a.time}</span>
+                <span className="flex-1" style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>{a.type}</span>
+                <TextLink label="View ECG" color={c.blue} onClick={() => openModal("ECG Waveform Capture", (
+                  <ViewECGModal alertItem={a} onClose={() => openModal("", null)} />
+                ))} />
+              </div>
+            ))}
+          </div>
+        )}
+        {alerts.length > 0 && (
+          <div className="mt-3">
+            <TextLink label="Clear alert history" color={c.muted} onClick={() => {
+              if (confirm("Are you sure you want to clear your local alert history? This will not affect clinical records on the hospital server.")) {
+                setAlerts([]);
+              }
+            }} />
+          </div>
+        )}
       </SectionCard>
     </>
   );
@@ -881,7 +1786,7 @@ function AlertsSection() {
 /* ════════════════════════════════════════════
    4. AI & ANALYSIS
    ════════════════════════════════════════════ */
-function AISection() {
+function AISection({ openModal, baselineDate, setBaselineDate, baselineDays, setBaselineDays, baselineRange, setBaselineRange }: any) {
   const c = useColors();
   const [freq, setFreq] = useState("Continuous");
   const [summaryTime, setSummaryTime] = useState("20:00");
@@ -922,9 +1827,9 @@ function AISection() {
       <SectionCard title="Baseline Management" icon={<Heart size={18} />} iconColor={c.red}>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           {[
-            { l: "Baseline established", v: "12 Feb 2026" },
-            { l: "Days of data", v: "50 days" },
-            { l: "Resting HR range", v: "58–74 BPM" },
+            { l: "Baseline established", v: baselineDate },
+            { l: "Days of data", v: baselineDays },
+            { l: "Resting HR range", v: baselineRange },
           ].map(s => (
             <div key={s.l} className="p-3 rounded-lg" style={{ background: c.cardElevated }}>
               <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.muted, display: "block", marginBottom: 2 }}>{s.l}</span>
@@ -933,8 +1838,26 @@ function AISection() {
           ))}
         </div>
         <div className="flex items-center gap-4 flex-wrap">
-          <button className="px-4 py-2 rounded-lg" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.amber, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.amber, background: "transparent" }}>Recalibrate baseline</button>
-          <TextLink label="Reset to factory baseline" color={c.muted} />
+          <button
+            onClick={() => openModal("Baseline Recalibration", (
+              <RecalibrateBaselineModal
+                setBaselineDate={setBaselineDate}
+                setBaselineRange={setBaselineRange}
+                onClose={() => openModal("", null)}
+              />
+            ))}
+            className="px-4 py-2 rounded-lg cursor-pointer hover:opacity-85 active:scale-95 transition-transform"
+            style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.amber, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.amber, background: "transparent" }}
+          >
+            Recalibrate baseline
+          </button>
+          <TextLink label="Reset to factory baseline" color={c.muted} onClick={() => {
+            if (confirm("Reset local baseline analysis to factory defaults? This requires wearing the shirt for 24 hours to re-establish a custom baseline.")) {
+              setBaselineDate("12 Feb 2026");
+              setBaselineRange("58–74 BPM");
+              alert("Baseline reset to factory defaults.");
+            }
+          }} />
         </div>
       </SectionCard>
 
@@ -946,7 +1869,7 @@ function AISection() {
           </div>
           <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>Updated 25 Mar 2026</span>
         </div>
-        <button onClick={() => setAiDisclosure(!aiDisclosure)} className="flex items-center gap-1" style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.blue }}>
+        <button onClick={() => setAiDisclosure(!aiDisclosure)} className="flex items-center gap-1 cursor-pointer" style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.blue }}>
           How does CardiShirt AI work? {aiDisclosure ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
         {aiDisclosure && (
@@ -954,7 +1877,11 @@ function AISection() {
             <p style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.secondary, lineHeight: 1.7 }}>
               CardiShirt AI continuously analyzes your ECG waveform patterns, heart rate variability, and rhythm regularity. It compares your real-time data against your personal baseline and clinical population data to detect anomalies. The AI does not diagnose medical conditions — it identifies patterns that may require attention and suggests you consult your doctor. All analysis runs locally on your device with periodic cloud validation.
             </p>
-            <TextLink label="View full AI disclosure →" color={c.blue} />
+            <div className="mt-2">
+              <TextLink label="View full AI disclosure →" color={c.blue} onClick={() => openModal("CardiShirt AI Medical & Regulatory Disclosure", (
+                <AIDisclosureModal onClose={() => openModal("", null)} />
+              ))} />
+            </div>
           </div>
         )}
       </SectionCard>
@@ -1042,18 +1969,12 @@ function DisplaySection() {
 /* ════════════════════════════════════════════
    6. PRIVACY & DATA
    ════════════════════════════════════════════ */
-function PrivacySection() {
+function PrivacySection({ openModal, sessions, setSessions }: any) {
   const c = useColors();
   const [analytics, setAnalytics] = useState(true);
   const [doctorShare, setDoctorShare] = useState(true);
   const [qaShare, setQaShare] = useState(true);
   const [appLock, setAppLock] = useState(false);
-
-  const sessions = [
-    { device: "Adnan's Galaxy S24", last: "Active now", current: true },
-    { device: "Fatema's iPhone 15", last: "2 hours ago", current: false },
-    { device: "Chrome — Desktop", last: "Yesterday", current: false },
-  ];
 
   return (
     <>
@@ -1061,7 +1982,7 @@ function PrivacySection() {
         <SettingRow label="Anonymous analytics" desc="Help improve the AI model with anonymous usage data"><Toggle on={analytics} onToggle={() => setAnalytics(!analytics)} /></SettingRow>
         <SettingRow label="Share with your doctor" desc="Your registered doctor can view your monitoring data"><Toggle on={doctorShare} onToggle={() => setDoctorShare(!doctorShare)} /></SettingRow>
         <SettingRow label="Medical review team" desc="CardiShirt quality assurance — no personal data shared"><Toggle on={qaShare} onToggle={() => setQaShare(!qaShare)} /></SettingRow>
-        <div className="mt-3"><TextLink label="View full privacy policy →" color={c.blue} /></div>
+        <div className="mt-3"><TextLink label="View full privacy policy →" color={c.blue} onClick={() => openModal("Privacy & Consent Policy", <PrivacyPolicyModal onClose={() => openModal("", null)} />)} /></div>
       </SectionCard>
 
       <SectionCard title="Storage & Export" icon={<Download size={18} />} iconColor={c.green}>
@@ -1073,8 +1994,22 @@ function PrivacySection() {
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <button className="px-4 py-2 rounded-lg" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>Manage storage</button>
-          <button className="px-4 py-2 rounded-lg flex items-center gap-1.5" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.blue, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.blue, background: "transparent" }}>
+          <button
+            onClick={() => openModal("Manage Local Storage", (
+              <ManageStorageModal onClose={() => openModal("", null)} />
+            ))}
+            className="px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}
+          >
+            Manage storage
+          </button>
+          <button
+            onClick={() => openModal("Export All Patient Data", (
+              <ExportDataModal onClose={() => openModal("", null)} />
+            ))}
+            className="px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer hover:opacity-85 active:scale-95 transition-transform"
+            style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.blue, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.blue, background: "transparent" }}
+          >
             <Download size={14} /> Export all data
           </button>
         </div>
@@ -1083,11 +2018,11 @@ function PrivacySection() {
       <SectionCard title="Security" icon={<Lock size={18} />} iconColor="#6B7499">
         <SettingRow label="App lock" desc="Require biometric or PIN to open the app"><Toggle on={appLock} onToggle={() => setAppLock(!appLock)} /></SettingRow>
         {appLock && (
-          <div className="mb-3"><TextLink label="Change PIN" color={c.red} /></div>
+          <div className="mb-3"><TextLink label="Change PIN" color={c.red} onClick={() => openModal("Change Application PIN", <ChangePINModal onClose={() => openModal("", null)} />)} /></div>
         )}
         <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 500, color: c.secondary, marginTop: 12, marginBottom: 8 }}>Active sessions</div>
         <div className="flex flex-col gap-2">
-          {sessions.map(s => (
+          {sessions.map((s: any) => (
             <div key={s.device} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: c.cardElevated }}>
               <div className="flex items-center gap-2">
                 <Smartphone size={14} style={{ color: c.secondary }} />
@@ -1097,11 +2032,20 @@ function PrivacySection() {
                   <span className="block" style={{ fontFamily: "DM Mono, monospace", fontSize: 11, color: c.muted }}>{s.last}</span>
                 </div>
               </div>
-              {!s.current && <TextLink label="Log out" color={c.red} />}
+              {!s.current && <TextLink label="Log out" color={c.red} onClick={() => {
+                if (confirm(`Log out session on ${s.device}?`)) {
+                  setSessions(prev => prev.filter(x => x.device !== s.device));
+                }
+              }} />}
             </div>
           ))}
         </div>
-        <div className="mt-3"><TextLink label="Log out all devices" color={c.red} /></div>
+        <div className="mt-3"><TextLink label="Log out all devices" color={c.red} onClick={() => {
+          if (confirm("Log out of all sessions except this device?")) {
+            setSessions(prev => prev.filter(x => x.current));
+            alert("Logged out all other devices.");
+          }
+        }} /></div>
       </SectionCard>
     </>
   );
@@ -1110,10 +2054,10 @@ function PrivacySection() {
 /* ════════════════════════════════════════════
    7. EMERGENCY CONFIGURATION
    ════════════════════════════════════════════ */
-function EmergencySection() {
+function EmergencySection({ openModal, dispatchAddress, setDispatchAddress, dispatchPhone, setDispatchPhone, emergencyContacts, setEmergencyContacts }: any) {
   const c = useColors();
   const [dispatchOn, setDispatchOn] = useState(true);
-  const [window, setWindow] = useState(60);
+  const [windowVal, setWindowVal] = useState(60);
   const [showTestResult, setShowTestResult] = useState(false);
 
   return (
@@ -1126,20 +2070,34 @@ function EmergencySection() {
           <>
             <SettingRow label="Response window" desc="Seconds before automatic dispatch begins">
               <div className="flex items-center gap-3">
-                <input type="range" min={30} max={120} step={10} value={window} onChange={(e) => setWindow(+e.target.value)} style={{ width: 120, accentColor: c.red }} />
-                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 16, color: c.text }}>{window}s</span>
+                <input type="range" min={30} max={120} step={10} value={windowVal} onChange={(e) => setWindowVal(+e.target.value)} style={{ width: 120, accentColor: c.red }} />
+                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 16, color: c.text }}>{windowVal}s</span>
               </div>
             </SettingRow>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 mb-3">
               <div className="p-3 rounded-lg" style={{ background: c.cardElevated }}>
                 <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.secondary, display: "block", marginBottom: 2 }}>Dispatch address</span>
-                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>42/3 Dhanmondi, Road 7A, Dhaka 1205</span>
-                <div className="mt-1"><TextLink label="Edit" color={c.red} /></div>
+                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>{dispatchAddress}</span>
+                <div className="mt-1"><TextLink label="Edit" color={c.red} onClick={() => openModal("Edit Dispatch Address", (
+                  <EditFieldModal
+                    label="Dispatch Address"
+                    initialValue={dispatchAddress}
+                    onSave={setDispatchAddress}
+                    onClose={() => openModal("", null)}
+                  />
+                ))} /></div>
               </div>
               <div className="p-3 rounded-lg" style={{ background: c.cardElevated }}>
                 <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.secondary, display: "block", marginBottom: 2 }}>Dispatch phone</span>
-                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>+880 1712-345678</span>
-                <div className="mt-1"><TextLink label="Edit" color={c.red} /></div>
+                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{dispatchPhone}</span>
+                <div className="mt-1"><TextLink label="Edit" color={c.red} onClick={() => openModal("Edit Dispatch Contact", (
+                  <EditFieldModal
+                    label="Dispatch Phone Number"
+                    initialValue={dispatchPhone}
+                    onSave={setDispatchPhone}
+                    onClose={() => openModal("", null)}
+                  />
+                ))} /></div>
               </div>
             </div>
           </>
@@ -1152,7 +2110,7 @@ function EmergencySection() {
           Simulate the full automatic dispatch countdown without sending any real notifications or calls. See exactly which contacts and services would be activated.
         </p>
         {!showTestResult ? (
-          <button onClick={() => setShowTestResult(true)} className="px-5 py-2.5 rounded-lg flex items-center gap-2" style={{
+          <button onClick={() => setShowTestResult(true)} className="px-5 py-2.5 rounded-lg flex items-center gap-2 cursor-pointer active:scale-95 transition-transform" style={{
             borderWidth: 1.5, borderStyle: "solid", borderColor: c.amber,
             fontFamily: "Syne, sans-serif", fontSize: 14, color: c.amber, background: "transparent",
           }}>
@@ -1168,33 +2126,31 @@ function EmergencySection() {
               In a real emergency, CardiShirt would have called <strong style={{ color: c.text }}>Dhaka Ambulance Service (999)</strong> and notified <strong style={{ color: c.text }}>3 family members</strong> within <strong style={{ color: c.text }}>45 seconds</strong>.
             </p>
             <div className="flex flex-col gap-1.5 mb-3">
-              {[
-                { who: "Rehnuma", method: "Push + SMS + Call", time: "0s" },
-                { who: "Rumi", method: "Push + SMS", time: "5s" },
-                { who: "Jabed", method: "Push + SMS", time: "10s" },
-                { who: "Dhaka Ambulance (999)", method: "API dispatch", time: "60s" },
-              ].map(r => (
-                <div key={r.who} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: c.d ? "#0D0F1A" : "#F0F2F8" }}>
-                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>{r.who}</span>
+              {emergencyContacts.map((r: any) => (
+                <div key={r.name} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: c.d ? "#0D0F1A" : "#F0F2F8" }}>
+                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>{r.name}</span>
                   <div className="flex items-center gap-3">
                     <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>{r.method}</span>
                     <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>T+{r.time}</span>
                   </div>
                 </div>
               ))}
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: c.d ? "#0D0F1A" : "#F0F2F8" }}>
+                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text }}>Dhaka Ambulance (999)</span>
+                <div className="flex items-center gap-3">
+                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.secondary }}>API dispatch</span>
+                  <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>T+{windowVal}s</span>
+                </div>
+              </div>
             </div>
-            <button onClick={() => setShowTestResult(false)} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.red }}>Close</button>
+            <button onClick={() => setShowTestResult(false)} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.red, cursor: "pointer" }}>Close</button>
           </div>
         )}
       </SectionCard>
 
       {/* Emergency Contacts Summary */}
       <SectionCard title="Emergency Contacts" icon={<Phone size={18} />} iconColor={c.red}>
-        {[
-          { name: "Rehnuma", role: "Daughter · Primary", pri: 1 },
-          { name: "Rumi", role: "Son", pri: 2 },
-          { name: "Jabed", role: "Spouse", pri: 3 },
-        ].map(m => (
+        {emergencyContacts.map((m: any) => (
           <div key={m.name} className="flex items-center gap-3 py-2.5" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: c.divider }}>
             <span className="flex items-center justify-center flex-shrink-0" style={{
               width: 22, height: 22, borderRadius: 11,
@@ -1208,7 +2164,13 @@ function EmergencySection() {
             </div>
           </div>
         ))}
-        <div className="mt-3"><TextLink label="Manage in Family Circle →" color={c.red} /></div>
+        <div className="mt-3"><TextLink label="Manage in Family Circle →" color={c.red} onClick={() => openModal("Emergency Contacts Priority", (
+          <ManageContactsModal
+            contacts={emergencyContacts}
+            setContacts={setEmergencyContacts}
+            onClose={() => openModal("", null)}
+          />
+        ))} /></div>
       </SectionCard>
 
       {/* Ambulance Services */}
@@ -1236,7 +2198,7 @@ function EmergencySection() {
 /* ════════════════════════════════════════════
    8. ABOUT & SUPPORT
    ════════════════════════════════════════════ */
-function AboutSection() {
+function AboutSection({ openModal }: any) {
   const c = useColors();
   const [diagSent, setDiagSent] = useState(false);
 
@@ -1247,7 +2209,7 @@ function AboutSection() {
           <span style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.secondary }}>App version</span>
           <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>2.8.0</span>
         </div>
-        <button className="px-4 py-2 rounded-lg" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>
+        <button onClick={() => openModal("Checking for Updates", <CheckUpdatesModal onClose={() => openModal("", null)} />)} className="px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>
           Check for app updates
         </button>
       </SectionCard>
@@ -1262,7 +2224,7 @@ function AboutSection() {
             { label: "Terms of service", icon: <FileText size={16} />, col: c.secondary },
             { label: "Privacy policy", icon: <Lock size={16} />, col: c.secondary },
           ].map(l => (
-            <button key={l.label} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left" style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text }}>
+            <button key={l.label} onClick={() => openModal(l.label, <SupportModal label={l.label} onClose={() => openModal("", null)} />)} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left w-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer" style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.text }}>
               <span style={{ color: l.col }}>{l.icon}</span>
               {l.label}
               <ChevronRight size={14} style={{ color: c.muted, marginLeft: "auto" }} />
@@ -1276,7 +2238,7 @@ function AboutSection() {
           This sends a technical summary of your app and device to the CardiShirt team to help diagnose problems. It does not include your ECG data.
         </p>
         {!diagSent ? (
-          <button onClick={() => setDiagSent(true)} className="px-4 py-2 rounded-lg flex items-center gap-2" style={{
+          <button onClick={() => setDiagSent(true)} className="px-4 py-2 rounded-lg flex items-center gap-2 cursor-pointer active:scale-95 transition-transform" style={{
             borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder,
             fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent",
           }}>
@@ -1300,19 +2262,89 @@ export function SettingsScreen() {
   const c = useColors();
   const [activeCategory, setActiveCategory] = useState<Category>("profile");
   const [mobileView, setMobileView] = useState<"list" | "content">("list");
-  const [tabletNavOpen, setTabletNavOpen] = useState(false);
   const items = useCategoryItems();
 
+  // Unified settings states
+  const [phone, setPhone] = useLocalStorage("cs_phone", "+880 1712-345678");
+  const [email, setEmail] = useLocalStorage("cs_email", "rahim@email.com");
+  const [caregiverName, setCaregiverName] = useLocalStorage("cs_caregiver_name", "Rehnuma");
+  const [caregiverRelation, setCaregiverRelation] = useLocalStorage("cs_caregiver_relation", "Daughter");
+  const [caregiverInitials, setCaregiverInitials] = useLocalStorage("cs_caregiver_initials", "FK");
+  const [caregiverColor, setCaregiverColor] = useLocalStorage("cs_caregiver_color", "#E8304A");
+  const [avatarInitials, setAvatarInitials] = useLocalStorage("cs_avatar_initials", "AU");
+  const [avatarBgColor, setAvatarBgColor] = useLocalStorage("cs_avatar_bgcolor", "#5B8AF0");
+  const [avatarUrl, setAvatarUrl] = useLocalStorage<string | null>("cs_avatar_url", null);
+
+  const [alerts, setAlerts] = useLocalStorage("cs_alert_history", [
+    { date: "3 Apr 2026", time: "2:14 PM", type: "High HR Alert", color: "#E8304A" },
+    { date: "3 Apr 2026", time: "11:30 AM", type: "Rhythm Anomaly", color: "#F5A623" },
+    { date: "1 Apr 2026", time: "3:47 PM", type: "HRV Drop", color: "#5B8AF0" },
+    { date: "30 Mar 2026", time: "8:12 AM", type: "High HR Alert", color: "#E8304A" },
+    { date: "28 Mar 2026", time: "6:01 PM", type: "Rhythm Anomaly", color: "#F5A623" },
+  ]);
+
+  const [baselineDate, setBaselineDate] = useLocalStorage("cs_baseline_date", "12 Feb 2026");
+  const [baselineDays, setBaselineDays] = useLocalStorage("cs_baseline_days", "50 days");
+  const [baselineRange, setBaselineRange] = useLocalStorage("cs_baseline_range", "58–74 BPM");
+
+  const [sessions, setSessions] = useLocalStorage("cs_sessions", [
+    { device: "Adnan's Galaxy S24", last: "Active now", current: true },
+    { device: "Fatema's iPhone 15", last: "2 hours ago", current: false },
+    { device: "Chrome — Desktop", last: "Yesterday", current: false },
+  ]);
+
+  const [dispatchAddress, setDispatchAddress] = useLocalStorage("cs_dispatch_address", "42/3 Dhanmondi, Road 7A, Dhaka 1205");
+  const [dispatchPhone, setDispatchPhone] = useLocalStorage("cs_dispatch_phone", "+880 1712-345678");
+  const [emergencyContacts, setEmergencyContacts] = useLocalStorage("cs_emergency_contacts", [
+    { name: "Rehnuma", role: "Daughter · Primary", pri: 1, method: "Push + SMS + Call", time: "0s" },
+    { name: "Rumi", role: "Son", pri: 2, method: "Push + SMS", time: "5s" },
+    { name: "Jabed", role: "Spouse", pri: 3, method: "Push + SMS", time: "10s" },
+  ]);
+
+  // Modal Manager State
+  const [activeModal, setActiveModal] = useState<{ title: string; content: React.ReactNode } | null>(null);
+
+  const openModal = (title: string, content: React.ReactNode) => {
+    if (!title && !content) {
+      setActiveModal(null);
+    } else {
+      setActiveModal({ title, content });
+    }
+  };
+  const closeModal = () => setActiveModal(null);
+
   const renderContent = () => {
+    const props = {
+      openModal,
+      closeModal,
+      phone, setPhone,
+      email, setEmail,
+      caregiverName, setCaregiverName,
+      caregiverRelation, setCaregiverRelation,
+      caregiverInitials, setCaregiverInitials,
+      caregiverColor, setCaregiverColor,
+      avatarInitials, setAvatarInitials,
+      avatarBgColor, setAvatarBgColor,
+      avatarUrl, setAvatarUrl,
+      alerts, setAlerts,
+      baselineDate, setBaselineDate,
+      baselineDays, setBaselineDays,
+      baselineRange, setBaselineRange,
+      sessions, setSessions,
+      dispatchAddress, setDispatchAddress,
+      dispatchPhone, setDispatchPhone,
+      emergencyContacts, setEmergencyContacts
+    };
+
     switch (activeCategory) {
-      case "profile": return <ProfileSection />;
-      case "device": return <DeviceSection />;
-      case "alerts": return <AlertsSection />;
-      case "ai": return <AISection />;
+      case "profile": return <ProfileSection {...props} />;
+      case "device": return <DeviceSection openModal={openModal} />;
+      case "alerts": return <AlertsSection {...props} />;
+      case "ai": return <AISection {...props} />;
       case "display": return <DisplaySection />;
-      case "privacy": return <PrivacySection />;
-      case "emergency": return <EmergencySection />;
-      case "about": return <AboutSection />;
+      case "privacy": return <PrivacySection {...props} />;
+      case "emergency": return <EmergencySection {...props} />;
+      case "about": return <AboutSection {...props} />;
     }
   };
 
@@ -1333,41 +2365,33 @@ export function SettingsScreen() {
         </span>
       </div>
 
-      {/* ── TABLET: Vertical Category List (hamburger-style) ── */}
-      <div className="hidden md:block xl:hidden" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: c.divider }}>
-        <button onClick={() => setTabletNavOpen(!tabletNavOpen)} className="w-full flex items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-2.5">
-            {(() => { const ai = items.find(i => i.id === activeCategory); return ai ? <ai.icon size={18} style={{ color: ai.iconColor }} /> : null; })()}
-            <span style={{ fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500, color: c.text }}>{activeLabel}</span>
-          </div>
-          <ChevronDown size={18} style={{ color: c.muted, transform: tabletNavOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
-        </button>
-        {tabletNavOpen && (
-          <div className="px-3 pb-3">
-            {items.map((item, i) => {
-              const isActive = activeCategory === item.id;
-              const isLast = i === items.length - 1;
-              return (
-                <div key={item.id}>
-                  {isLast && <div className="my-1.5" style={{ height: 1, background: c.divider }} />}
-                  <button
-                    onClick={() => { setActiveCategory(item.id); setTabletNavOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left"
-                    style={{
-                      background: isActive ? c.activeNavBg : "transparent",
-                      borderLeftWidth: 3, borderLeftStyle: "solid",
-                      borderLeftColor: isActive ? c.navBorder : "transparent",
-                    }}
-                  >
-                    <item.icon size={18} style={{ color: isActive ? c.red : item.iconColor, flexShrink: 0 }} />
-                    <span className="flex-1" style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500, color: isActive ? c.text : c.secondary }}>{item.label}</span>
-                    {item.badge && <span className="flex-shrink-0">{item.badge}</span>}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      {/* ── TABLET: Horizontal Category Tab Strip (768px - 1279px) ── */}
+      <div className="hidden md:block xl:hidden overflow-x-auto whitespace-nowrap py-3 px-4 border-b" style={{ borderColor: c.divider, background: c.cardBg }}>
+        <div className="flex gap-2">
+          {items.map((item) => {
+            const isActive = activeCategory === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveCategory(item.id)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors border"
+                style={{
+                  background: isActive ? c.activeNavBg : "transparent",
+                  borderColor: isActive ? c.navBorder : c.cardBorder,
+                  fontFamily: "Syne, sans-serif",
+                  fontSize: 13,
+                  fontWeight: isActive ? 500 : 400,
+                  color: isActive ? c.text : c.secondary,
+                  cursor: "pointer",
+                }}
+              >
+                <item.icon size={15} style={{ color: isActive ? c.red : item.iconColor, flexShrink: 0 }} />
+                <span>{item.label}</span>
+                {item.badge && <span className="ml-1 scale-75 flex-shrink-0">{item.badge}</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -1410,6 +2434,31 @@ export function SettingsScreen() {
           </div>
         </div>
       </div>
+
+      {/* ── GENERIC SETTINGS MODAL ── */}
+      {activeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div
+            className="w-full max-w-md rounded-xl overflow-hidden shadow-2xl transition-all duration-300 border animate-scale-up"
+            style={{
+              background: c.cardBg,
+              borderColor: c.cardBorder,
+            }}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: c.divider }}>
+              <span style={{ fontFamily: "Syne, sans-serif", fontSize: 16, fontWeight: 500, color: c.text }}>{activeModal.title}</span>
+              <button onClick={closeModal} style={{ color: c.secondary, background: "none", border: "none", cursor: "pointer" }} className="p-1 hover:opacity-80">
+                <X size={18} />
+              </button>
+            </div>
+            {/* Modal Content */}
+            <div className="px-5 py-4 overflow-y-auto max-h-[75vh]">
+              {activeModal.content}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

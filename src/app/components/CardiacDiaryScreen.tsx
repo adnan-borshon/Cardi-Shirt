@@ -197,26 +197,26 @@ function EcgWaveformPlayer({ type }: { type: "normal" | "irregular" | "anomalous
 export function CardiacDiaryScreen() {
   const tk = useTokens();
   const { theme } = useTheme();
-  const d = theme === "dark";
+  const d = theme === "dark" || theme === "ocean";
 
   const c = {
-    textPrimary: d ? "#F0F2FF" : "#0D0F1A",
-    textSecondary: d ? "#8890B8" : "#6B7499",
-    textMuted: d ? "#4A5070" : "#9AA0B8",
+    textPrimary: tk.textPrimary,
+    textSecondary: tk.textSecondary,
+    textMuted: tk.textMuted,
     notWornBg: d ? "#2A2D3E" : "#EEF0F5",
-    notWornText: d ? "#6B7280" : "#9AA0B8",
+    notWornText: tk.textMuted,
     futureDateColor: d ? "#4A5070" : "#C2C8D6",
-    cardBg: d ? "#141629" : "#FFFFFF",
-    surfaceBg: d ? "#1A1D35" : "#F7F8FC",
-    borderColor: d ? "rgba(100,120,200,0.15)" : "rgba(0,0,0,0.08)",
-    pageBg: d ? "#0D0F1A" : "#FFFFFF",
-    selectedBorder: d ? "#F0F2FF" : "#0D0F1A",
-    chipBg: d ? "#1A1D35" : "#F3F4F6",
-    inputBg: d ? "#1A1D35" : "#F9FAFB",
-    shadow: d ? "none" : "0 1px 3px rgba(0,0,0,0.06)",
-    refLine: d ? "rgba(100,120,200,0.15)" : "#C2C8D6",
-    poincareDot: d ? "rgba(232,48,74,0.5)" : "rgba(232,48,74,0.4)",
-    poincareAxis: d ? "rgba(100,120,200,0.08)" : "rgba(0,0,0,0.05)",
+    cardBg: tk.cardBg,
+    surfaceBg: tk.cardElevated,
+    borderColor: tk.cardBorder,
+    pageBg: tk.pageBg,
+    selectedBorder: tk.textPrimary,
+    chipBg: tk.chipBg,
+    inputBg: tk.inputBg,
+    shadow: tk.shadow,
+    refLine: tk.ecgGrid,
+    poincareDot: tk.cardiacRedGlow,
+    poincareAxis: tk.borderSubtle,
   };
 
   const today = new Date();

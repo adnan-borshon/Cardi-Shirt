@@ -20,7 +20,7 @@ export function AppLayout() {
   return (
     <div className="flex h-screen w-full transition-colors duration-300" style={{ background: tk.pageBg, fontFamily: "Syne, sans-serif" }}>
       <HamburgerMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
-      <Sidebar onHamburgerOpen={() => setMenuOpen(true)} />
+      <Sidebar />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <TopBar onMenuOpen={() => setMenuOpen(true)} />

@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard, Activity, BookOpen, TrendingUp, Settings, Users, Pill,
-  Signal, BatteryMedium, ChevronLeft, ChevronRight, Sun, Moon, Menu
+  Signal, BatteryMedium, ChevronLeft, ChevronRight, Palette
 } from "lucide-react";
 import { useTheme, useTokens } from "./ThemeContext";
+import { useLiveVitals } from "./useBackend";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -15,16 +16,16 @@ const navItems = [
   { path: "/settings", icon: Settings, label: "Settings" },
 ];
 
-interface SidebarProps {
-  onHamburgerOpen?: () => void;
-}
+interface SidebarProps {}
 
-export function Sidebar({ onHamburgerOpen }: SidebarProps) {
+export function Sidebar({}: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const { theme, toggle } = useTheme();
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
   const tk = useTokens();
   const navigate = useNavigate();
   const location = useLocation();
+  const { connected, vitals } = useLiveVitals();
 
   return (
     <aside
@@ -33,9 +34,6 @@ export function Sidebar({ onHamburgerOpen }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center gap-2 px-4 py-5">
-        <button onClick={() => { if (onHamburgerOpen) onHamburgerOpen(); else setCollapsed(!collapsed); }} className="p-1 rounded transition-colors" style={{ color: tk.textSecondary }}>
-          <Menu size={18} />
-        </button>
         {!collapsed && (
           <>
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
@@ -80,16 +78,34 @@ export function Sidebar({ onHamburgerOpen }: SidebarProps) {
         })}
       </nav>
 
-      {/* Theme Toggle */}
-      <div className="px-2 mb-2">
-        <button
-          onClick={toggle}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg transition-all"
-          style={{ background: tk.cardElevated, color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12 }}
-        >
-          {theme === "dark" ? <Sun size={16} style={{ color: tk.amber }} /> : <Moon size={16} style={{ color: tk.textSecondary }} />}
-          {!collapsed && (theme === "dark" ? "Light Mode" : "Dark Mode")}
-        </button>
+      {/* Theme Selector */}
+      <div className="px-2 mb-3 flex flex-col gap-2">
+        {!collapsed && (
+          <div className="px-3 text-[10px] uppercase tracking-wider font-bold" style={{ color: tk.textMuted }}>
+            Theme
+          </div>
+        )}
+        <div className={`flex ${collapsed ? 'flex-col items-center' : 'justify-around px-2'} gap-2`}>
+          {[
+            { id: "dark", color: "#141629", border: "#4A5070" },
+            { id: "light", color: "#FFFFFF", border: "#D1D5DB" },
+            { id: "ocean", color: "#0A1929", border: "#668EBA" },
+            { id: "nature", color: "#F2F7F4", border: "#7B9E86" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTheme(t.id as any)}
+              className="w-5 h-5 rounded-full transition-all duration-200 flex items-center justify-center"
+              style={{
+                background: t.color,
+                border: `1.5px solid ${theme === t.id ? tk.cardiacRed : t.border}`,
+                transform: theme === t.id ? "scale(1.2)" : "scale(1)",
+                boxShadow: theme === t.id ? `0 0 8px ${tk.cardiacRedGlow}` : "none"
+              }}
+              title={t.id.charAt(0).toUpperCase() + t.id.slice(1)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Shirt Status */}
@@ -97,27 +113,44 @@ export function Sidebar({ onHamburgerOpen }: SidebarProps) {
         <div className="flex items-center gap-2 mb-1">
           <div className="relative">
             <svg width="20" height="24" viewBox="0 0 24 28" fill="none">
-              <path d="M6 4L2 8V24H22V8L18 4H15C15 6.2 13.2 8 11 8H13C10.8 8 9 6.2 9 4H6Z" stroke="#27C28A" strokeWidth="1.5" fill="none" />
+              <path d="M6 4L2 8V24H22V8L18 4H15C15 6.2 13.2 8 11 8H13C10.8 8 9 6.2 9 4H6Z" stroke={connected ? "#27C28A" : tk.textMuted} strokeWidth="1.5" fill="none" />
             </svg>
-            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#27C28A] animate-pulse" />
+            <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${connected ? 'bg-[#27C28A] animate-pulse' : 'bg-gray-500'}`} />
           </div>
-          {!collapsed && <span style={{ color: "#27C28A", fontFamily: "DM Mono, monospace", fontSize: 11 }}>Connected</span>}
+          {!collapsed && <span style={{ color: connected ? "#27C28A" : tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 11 }}>{connected ? "Connected" : "Disconnected"}</span>}
         </div>
         {!collapsed && (
           <div className="flex items-center gap-3 mt-1" style={{ color: tk.textSecondary, fontSize: 10 }}>
-            <div className="flex items-center gap-1"><BatteryMedium size={12} /><span style={{ fontFamily: "DM Mono, monospace" }}>72%</span></div>
-            <div className="flex items-center gap-1"><Signal size={12} /><span style={{ fontFamily: "DM Mono, monospace" }}>Strong</span></div>
+            <div className="flex items-center gap-1"><BatteryMedium size={12} /><span style={{ fontFamily: "DM Mono, monospace" }}>{vitals?.temp ? "98%" : "--"}</span></div>
+            <div className="flex items-center gap-1"><Signal size={12} /><span style={{ fontFamily: "DM Mono, monospace" }}>{connected ? "Strong" : "None"}</span></div>
           </div>
         )}
       </div>
 
       {/* Patient */}
-      <div className="px-3 py-3 flex items-center gap-3" style={{ borderTop: `0.5px solid ${tk.cardBorder}` }}>
+      <div className="px-3 py-3 flex items-center gap-3 relative cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ borderTop: `0.5px solid ${tk.cardBorder}` }} onClick={() => setProfileModalOpen(!profileModalOpen)}>
         <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 600 }}>RK</div>
         {!collapsed && (
           <div>
             <div style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12 }}>Adnan</div>
             <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(39,194,138,0.15)", color: "#27C28A", fontSize: 9, fontFamily: "DM Mono, monospace" }}>Low Risk</span>
+          </div>
+        )}
+        
+        {/* Profile Modal */}
+        {profileModalOpen && (
+          <div 
+            className="absolute bottom-full left-2 mb-2 w-[calc(100%-16px)] min-w-[200px] rounded-lg shadow-xl overflow-hidden z-50 border" 
+            style={{ background: tk.cardBg, borderColor: tk.cardBorder }}
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="p-3 border-b" style={{ borderColor: tk.cardBorder }}>
+               <div style={{ color: tk.textPrimary, fontSize: 14, fontWeight: 'bold', fontFamily: "Syne, sans-serif" }}>Adnan RK</div>
+               <div style={{ color: tk.textSecondary, fontSize: 12, fontFamily: "DM Mono, monospace" }}>Patient ID: 9821</div>
+             </div>
+             <button onClick={() => { setProfileModalOpen(false); navigate('/settings'); }} className="w-full text-left px-3 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2" style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif" }}>
+               <Settings size={14} style={{ color: tk.textSecondary }} /> Go to Settings
+             </button>
           </div>
         )}
       </div>
