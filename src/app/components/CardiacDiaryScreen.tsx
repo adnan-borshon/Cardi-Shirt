@@ -375,6 +375,45 @@ export function CardiacDiaryScreen() {
     localStorage.setItem("cardishirt_diary_events", JSON.stringify(customEventsByDate));
   }, [customEventsByDate]);
 
+  // Event description and time overrides persistent state
+  const [eventOverridesByDate, setEventOverridesByDate] = useState<Record<string, Record<string, { text: string; time: string }>>> (() => {
+    try {
+      const saved = localStorage.getItem("cardishirt_diary_event_overrides");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cardishirt_diary_event_overrides", JSON.stringify(eventOverridesByDate));
+  }, [eventOverridesByDate]);
+
+  // Edit Event Modal state variables
+  const [editEventModalOpen, setEditEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<any>(null);
+  const [editEventText, setEditEventText] = useState("");
+  const [editEventTime, setEditEventTime] = useState("");
+
+  const handleSaveEventOverride = () => {
+    if (!editingEvent) return;
+    setEventOverridesByDate(prev => {
+      const dayOverrides = prev[selectedDateStr] || {};
+      return {
+        ...prev,
+        [selectedDateStr]: {
+          ...dayOverrides,
+          [editingEvent.id]: {
+            text: editEventText,
+            time: editEventTime
+          }
+        }
+      };
+    });
+    setEditEventModalOpen(false);
+    setEditingEvent(null);
+  };
+
   // Dialog / Modal state variables
   const [symptomModalOpen, setSymptomModalOpen] = useState(false);
   const [symptomName, setSymptomName] = useState("");
@@ -446,14 +485,10 @@ export function CardiacDiaryScreen() {
       setSelectedEventDetails(event);
       setEcgPlayerOpen(true);
     } else if (event.action === L.evtEditNote) {
-      setNotesOpen(true);
-      setTimeout(() => {
-        const textarea = document.getElementById("daily-note-textarea");
-        if (textarea) {
-          textarea.focus();
-          textarea.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 100);
+      setEditingEvent(event);
+      setEditEventText(event.text);
+      setEditEventTime(event.time);
+      setEditEventModalOpen(true);
     } else if (event.action === L.evtViewDetails || event.action === L.evtView) {
       setSelectedEventDetails(event);
       setDetailsModalOpen(true);
@@ -548,18 +583,20 @@ export function CardiacDiaryScreen() {
   // Compile timeline events per-day dynamically
   const dayEvents = useMemo(() => {
     const isWorn = selected && selected.wearing !== "none";
+    const overrides = eventOverridesByDate[selectedDateStr] || {};
+
     let baseEvents = isWorn ? [
-      { id: "e1", time: "7:14 AM", iconName: "Shirt", color: "#9AA0B8", text: L.evtShirtConnected, action: L.evtViewDetails, type: "device" as const },
-      { id: "e2", time: "8:30 AM", iconName: "User", color: "#5B8AF0", text: L.evtCheckin, action: L.evtEditNote, type: "patient" as const },
-      { id: "e3", time: "9:00 AM", iconName: "Pill", color: "#5B8AF0", text: L.evtMedLogged, action: L.evtEditNote, type: "patient" as const },
-      { id: "e4", time: "11:45 AM", iconName: "Wind", color: "#27C28A", text: L.evtBreathingNormal, action: L.evtView, type: "cardiac" as const },
-      { id: "e5", time: "1:30 PM", iconName: "Gauge", color: "#F5A623", text: L.evtStrainElevated, action: L.evtView, type: "cardiac" as const },
-      { id: "e6", time: "2:15 PM", iconName: "Heart", color: "#E8304A", text: L.evtIrregular, action: L.evtViewECG, type: "cardiac" as const },
-      { id: "e7", time: "2:18 PM", iconName: "TrendingDown", color: "#E8304A", text: L.evtTWaveInversion, action: L.evtViewECG, type: "cardiac" as const },
-      { id: "e8", time: "2:22 PM", iconName: "TrendingUp", color: "#E8304A", text: L.evtSTDeviation, action: L.evtViewECG, type: "cardiac" as const },
-      { id: "e9", time: "3:15 PM", iconName: "Brain", color: "#27C28A", text: L.evtStressLow, action: L.evtView, type: "cardiac" as const },
-      { id: "e10", time: "3:42 PM", iconName: "Sparkles", color: "#F5A623", text: L.evtAISummary, action: L.evtView, type: "cardiac" as const },
-      { id: "e11", time: "6:00 PM", iconName: "User", color: "#5B8AF0", text: L.evtFatigue, action: L.evtEditNote, type: "patient" as const },
+      { id: "e1", time: overrides["e1"]?.time || "7:14 AM", iconName: "Shirt", color: "#9AA0B8", text: overrides["e1"]?.text || L.evtShirtConnected, action: L.evtViewDetails, type: "device" as const },
+      { id: "e2", time: overrides["e2"]?.time || "8:30 AM", iconName: "User", color: "#5B8AF0", text: overrides["e2"]?.text || L.evtCheckin, action: L.evtEditNote, type: "patient" as const },
+      { id: "e3", time: overrides["e3"]?.time || "9:00 AM", iconName: "Pill", color: "#5B8AF0", text: overrides["e3"]?.text || L.evtMedLogged, action: L.evtEditNote, type: "patient" as const },
+      { id: "e4", time: overrides["e4"]?.time || "11:45 AM", iconName: "Wind", color: "#27C28A", text: overrides["e4"]?.text || L.evtBreathingNormal, action: L.evtView, type: "cardiac" as const },
+      { id: "e5", time: overrides["e5"]?.time || "1:30 PM", iconName: "Gauge", color: "#F5A623", text: overrides["e5"]?.text || L.evtStrainElevated, action: L.evtView, type: "cardiac" as const },
+      { id: "e6", time: overrides["e6"]?.time || "2:15 PM", iconName: "Heart", color: "#E8304A", text: overrides["e6"]?.text || L.evtIrregular, action: L.evtViewECG, type: "cardiac" as const },
+      { id: "e7", time: overrides["e7"]?.time || "2:18 PM", iconName: "TrendingDown", color: "#E8304A", text: overrides["e7"]?.text || L.evtTWaveInversion, action: L.evtViewECG, type: "cardiac" as const },
+      { id: "e8", time: overrides["e8"]?.time || "2:22 PM", iconName: "TrendingUp", color: "#E8304A", text: overrides["e8"]?.text || L.evtSTDeviation, action: L.evtViewECG, type: "cardiac" as const },
+      { id: "e9", time: overrides["e9"]?.time || "3:15 PM", iconName: "Brain", color: "#27C28A", text: overrides["e9"]?.text || L.evtStressLow, action: L.evtView, type: "cardiac" as const },
+      { id: "e10", time: overrides["e10"]?.time || "3:42 PM", iconName: "Sparkles", color: "#F5A623", text: overrides["e10"]?.text || L.evtAISummary, action: L.evtView, type: "cardiac" as const },
+      { id: "e11", time: overrides["e11"]?.time || "6:00 PM", iconName: "User", color: "#5B8AF0", text: overrides["e11"]?.text || L.evtFatigue, action: L.evtEditNote, type: "patient" as const },
     ] : [];
 
     // Filter out if not alerts day (selected day hasAlert must be true for alert/cardiac red events)
@@ -567,7 +604,18 @@ export function CardiacDiaryScreen() {
       baseEvents = baseEvents.filter(e => e.color !== "#E8304A");
     }
 
-    const custom = customEventsByDate[selectedDateStr] || [];
+    const custom = (customEventsByDate[selectedDateStr] || []).map(evt => {
+      const o = overrides[evt.id];
+      if (o) {
+        return {
+          ...evt,
+          time: o.time,
+          text: o.text
+        };
+      }
+      return evt;
+    });
+    
     const combined = [...baseEvents, ...custom];
 
     const parseTimeToMinutes = (tStr: string) => {
@@ -582,7 +630,7 @@ export function CardiacDiaryScreen() {
     };
 
     return combined.sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
-  }, [selected, selectedDateStr, customEventsByDate]);
+  }, [selected, selectedDateStr, customEventsByDate, eventOverridesByDate]);
 
   const cardiacEvents = dayEvents.filter((e) => e.type !== "device");
   const deviceEvents = dayEvents.filter((e) => e.type === "device");
@@ -1356,6 +1404,59 @@ export function CardiacDiaryScreen() {
             <div className="flex items-center justify-end mt-2">
               <button onClick={() => setDetailsModalOpen(false)} className="px-4 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: "#E8304A", fontFamily: "Syne, sans-serif" }}>
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Event Note Modal */}
+      {editEventModalOpen && editingEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4" style={{ background: c.cardBg, border: `1px solid ${c.borderColor}`, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold flex items-center gap-2" style={{ color: c.textPrimary, fontFamily: "Syne, sans-serif" }}>
+                <Edit3 size={18} style={{ color: "#E8304A" }} /> Edit Event Note
+              </span>
+              <button onClick={() => setEditEventModalOpen(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5" style={{ color: c.textSecondary }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>EVENT DESCRIPTION / NOTE</span>
+                <textarea
+                  value={editEventText}
+                  onChange={(e) => setEditEventText(e.target.value)}
+                  rows={3}
+                  className="px-3.5 py-2 rounded-xl outline-none resize-none"
+                  style={{ background: c.inputBg, border: `1px solid ${c.borderColor}`, color: c.textPrimary, fontSize: 13, fontFamily: "Syne, sans-serif" }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold" style={{ color: c.textSecondary, fontFamily: "Syne, sans-serif" }}>EVENT TIME</span>
+                <input
+                  type="text"
+                  value={editEventTime}
+                  onChange={(e) => setEditEventTime(e.target.value)}
+                  className="px-3.5 py-2 rounded-xl outline-none"
+                  style={{ background: c.inputBg, border: `1px solid ${c.borderColor}`, color: c.textPrimary, fontSize: 13, fontFamily: "DM Mono, monospace" }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 justify-end mt-2">
+              <button onClick={() => setEditEventModalOpen(false)} className="px-4 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: c.textSecondary, background: c.chipBg, fontFamily: "Syne, sans-serif" }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEventOverride}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: "#E8304A", fontFamily: "Syne, sans-serif" }}
+              >
+                Update Note
               </button>
             </div>
           </div>
