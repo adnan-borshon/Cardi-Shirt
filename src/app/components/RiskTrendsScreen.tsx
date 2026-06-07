@@ -214,6 +214,7 @@ function EcgWaveformPlayer({ type }: { type: "normal" | "irregular" | "anomalous
 
   return (
     <canvas
+      id="print-ecg-canvas"
       ref={canvasRef}
       width={500}
       height={180}
@@ -360,6 +361,219 @@ export function RiskTrendsScreen() {
     y: number;
     color: string;
   } | null>(null);
+
+  const handleDotClick = (payload: any, cx: number, cy: number, color: string) => {
+    setClickedEvent({
+      label: payload.label,
+      value: payload.value,
+      dateStr: payload.dateStr,
+      event: payload.event,
+      x: cx,
+      y: cy,
+      color
+    });
+  };
+
+  const handleRecommendationClick = (action: string) => {
+    if (action.toLowerCase().includes("share")) {
+      setShareModalOpen(true);
+    } else if (action.toLowerCase().includes("wear")) {
+      navigate("/settings");
+    } else if (action.toLowerCase().includes("rest")) {
+      alert("Recommendation logged: Activity limit set. We've updated your daily plan.");
+    }
+  };
+
+  const handlePrintComparisonReport = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow popups to download the PDF report.");
+      return;
+    }
+    
+    const currentRange = rangeLabels[range];
+    const compareText = compMode === "personal" ? "vs. Last Period" : "vs. Baseline";
+    const metrics = [
+      { name: "Resting Heart Rate", current: `${recentHr} BPM`, prev: compMode === "personal" ? "72 BPM" : "70 BPM", verdict: "Stable" },
+      { name: "Heart Rate Variability (RMSSD)", current: "37 ms", prev: compMode === "personal" ? "44 ms" : "41 ms", verdict: "Watch" },
+      { name: "Rhythm Stability", current: "93%", prev: compMode === "personal" ? "95%" : "96%", verdict: "Same" },
+      { name: "Alerts/week", current: "2", prev: compMode === "personal" ? "1.2" : "1.5", verdict: "Watch" }
+    ];
+    
+    const aiSummary = summaries.length > 0 && summaries[0].summary 
+      ? summaries[0].summary 
+      : "Based on recorded vitals, your cardiac health score is stable. Average heart rate is stable, but physiological stress and alert frequencies require monitoring.";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>CardiShirt Trend Report - ${new Date().toLocaleDateString()}</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #161519; padding: 40px; line-height: 1.5; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #E8304A; padding-bottom: 20px; margin-bottom: 30px; }
+          .title { font-size: 24px; font-weight: bold; color: #E8304A; }
+          .meta-info { text-align: right; font-size: 13px; color: #4A4A6A; }
+          .section-title { font-size: 16px; font-weight: bold; margin-top: 30px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #0D0F1A; border-left: 3px solid #E8304A; padding-left: 10px; }
+          .summary-card { background: #F7F8FC; border: 1px solid rgba(0,0,0,0.06); border-radius: 8px; padding: 20px; font-size: 14px; margin-bottom: 30px; font-style: italic; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 30px; }
+          th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid rgba(0,0,0,0.06); }
+          th { background: #F4F5F9; font-size: 12px; font-weight: bold; text-transform: uppercase; color: #6B7499; }
+          td { font-size: 14px; }
+          .verdict-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+          .verdict-stable { background: rgba(39,194,138,0.1); color: #27C28A; }
+          .verdict-watch { background: rgba(245,166,35,0.1); color: #F5A623; }
+          .verdict-same { background: rgba(0,0,0,0.05); color: #6B7499; }
+          .footer { margin-top: 60px; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 15px; font-size: 11px; color: #9AA0B8; text-align: center; }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="title">CardiShirt Clinical Trend Digest</div>
+            <div style="font-size: 14px; color: #4A4A6A; margin-top: 4px;">Patient: Adnan (CardiShirt Wearer)</div>
+          </div>
+          <div class="meta-info">
+            <div>Report Range: ${currentRange}</div>
+            <div>Generated: ${new Date().toLocaleString()}</div>
+          </div>
+        </div>
+        
+        <div class="section-title">AI Trend Narrative</div>
+        <div class="summary-card">
+          ${aiSummary}
+        </div>
+        
+        <div class="section-title">Metrics Comparison (${compareText})</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Current Period Avg</th>
+              <th>Comparison Period</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${metrics.map(m => {
+              let badgeClass = "verdict-same";
+              if (m.verdict.toLowerCase().includes("stable") || m.verdict.toLowerCase().includes("better")) {
+                badgeClass = "verdict-stable";
+              } else if (m.verdict.toLowerCase().includes("watch")) {
+                badgeClass = "verdict-watch";
+              }
+              return `
+                <tr>
+                  <td><strong>${m.name}</strong></td>
+                  <td>${m.current}</td>
+                  <td>${m.prev}</td>
+                  <td><span class="verdict-badge ${badgeClass}">${m.verdict}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+        
+        <div class="footer">
+          This is an AI-assisted longitudinal cardiac vital trend report generated by the CardiShirt cloud service.<br/>
+          This document does not substitute for a professional diagnosis. Please review these trends with your cardiologist.
+        </div>
+        
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handlePrintEcgReport = (alertItem: any) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow popups to export the ECG report.");
+      return;
+    }
+    
+    const canvasElement = document.getElementById("print-ecg-canvas") as HTMLCanvasElement;
+    const canvasImage = canvasElement ? canvasElement.toDataURL("image/png") : "";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>CardiShirt ECG Report - ${alertItem.name}</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #161519; padding: 40px; line-height: 1.5; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #E8304A; padding-bottom: 20px; margin-bottom: 30px; }
+          .title { font-size: 24px; font-weight: bold; color: #E8304A; }
+          .meta-info { text-align: right; font-size: 13px; color: #4A4A6A; }
+          .section-title { font-size: 16px; font-weight: bold; margin-top: 30px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #0D0F1A; border-left: 3px solid #E8304A; padding-left: 10px; }
+          .details-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 15px; background: #F7F8FC; border: 1px solid rgba(0,0,0,0.06); border-radius: 8px; padding: 20px; font-size: 14px; margin-bottom: 30px; }
+          .details-grid div span { color: #6B7499; font-weight: 500; }
+          .ecg-container { border: 1px solid #E8304A; border-radius: 8px; padding: 15px; text-align: center; background: #FCF8F8; }
+          .ecg-image { max-width: 100%; border-radius: 4px; border: 1px solid rgba(0,0,0,0.05); }
+          .footer { margin-top: 60px; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 15px; font-size: 11px; color: #9AA0B8; text-align: center; }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="title">CardiShirt Diagnostic ECG Snapshot</div>
+            <div style="font-size: 14px; color: #4A4A6A; margin-top: 4px;">Patient: Adnan (CardiShirt Wearer)</div>
+          </div>
+          <div class="meta-info">
+            <div>Record ID: ECG-${Math.floor(100000 + Math.random() * 900000)}</div>
+            <div>Export Date: ${new Date().toLocaleString()}</div>
+          </div>
+        </div>
+        
+        <div class="section-title">Event Details</div>
+        <div class="details-grid">
+          <div><span>Alert Type:</span> ${alertItem.name}</div>
+          <div><span>Timestamp:</span> ${alertItem.date}</div>
+          <div><span>Duration:</span> ${alertItem.duration}</div>
+          <div><span>Lead Channel:</span> Lead II (Precordial)</div>
+        </div>
+        
+        <div class="section-title">ECG Waveform Capture</div>
+        <div class="ecg-container">
+          ${canvasImage ? `<img src="${canvasImage}" class="ecg-image" alt="ECG Snapshot" />` : `<div style="padding: 50px; color: #9AA0B8;">Waveform Capture Unavailable</div>`}
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6B7499; margin-top: 10px; font-family: monospace;">
+            <span>Scale: 25mm/s • 10mm/mV</span>
+            <span>Lead II • 12-Bit Resolution</span>
+          </div>
+        </div>
+        
+        <div class="footer">
+          This document represents a static, high-fidelity capture of a registered cardiac event from the CardiShirt wearable shirt sensor.<br/>
+          This waveform analysis does not constitute medical advice. Please share this file directly with your doctor.
+        </div>
+        
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
 
   useEffect(() => {
     fetch(`${API_URL}/api/trends?range=${range}`)
@@ -529,13 +743,13 @@ export function RiskTrendsScreen() {
         <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 500, color: c.rightText, marginBottom: 8, display: "block" }}>Suggestions</span>
         <div className="flex flex-col gap-2">
           {recommendations.map((r, i) => (
-            <div key={i} className="flex items-start gap-3 px-3 py-2.5 rounded-lg" style={{ background: c.rightCard, border: `1px solid ${c.cardBorder}` }}>
+            <button key={i} onClick={() => handleRecommendationClick(r.action)} className="w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer" style={{ background: c.rightCard, border: `1px solid ${c.cardBorder}` }}>
               <r.icon size={16} style={{ color: c.red, marginTop: 2, flexShrink: 0 }} />
               <div>
-                <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.rightText }}>{r.action}</div>
+                <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.rightText, fontWeight: 500 }}>{r.action}</div>
                 <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.rightSecondary }}>{r.context}</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -623,11 +837,14 @@ export function RiskTrendsScreen() {
                   ? summaries[0].summary 
                   : "We found cardiac data for this day. The AI indicates normal patterns for the duration worn.")}
               </p>
-              <div className="flex items-center gap-3 mt-4 flex-wrap">
+              <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
                 <div className="flex items-center gap-1.5">
                   <Sparkles size={13} style={{ color: c.red }} />
                   <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.bodySecondary }}>CardiShirt AI Summary</span>
                 </div>
+                <button onClick={() => setShareModalOpen(true)} className="flex items-center gap-1.5 text-xs font-semibold hover:underline cursor-pointer" style={{ color: c.red, fontFamily: "Syne, sans-serif" }}>
+                  <Share2 size={12} /> Share with doctor
+                </button>
               </div>
             </div>
 
@@ -639,7 +856,7 @@ export function RiskTrendsScreen() {
                   {chartType === "area" ? <BarChart3 size={14} /> : <LineChartIcon size={14} />}
                 </button>
               </div>
-              <div style={{ height: 240 }}>
+              <div style={{ height: 240, position: "relative" }}>
                 {healthData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     {chartType === "area" ? (
@@ -654,7 +871,7 @@ export function RiskTrendsScreen() {
                         <XAxis dataKey="label" tick={{ fontSize: 9, fill: c.bodyMuted, fontFamily: "DM Mono" }} tickLine={false} axisLine={false} />
                         <YAxis tick={{ fontSize: 9, fill: c.bodyMuted, fontFamily: "DM Mono" }} tickLine={false} axisLine={false} domain={[30, 100]} />
                         <Tooltip contentStyle={tooltipLight} formatter={(v: number) => [Math.round(v), "Health Score"]} />
-                        <Area type="monotone" dataKey="value" stroke={RISK_COLOR} strokeWidth={2} fill="url(#healthGrad)" dot={false} />
+                        <Area type="monotone" dataKey="value" stroke={RISK_COLOR} strokeWidth={2} fill="url(#healthGrad)" dot={<CustomDot onDotClick={handleDotClick} />} />
                       </AreaChart>
                     ) : (
                       <BarChart data={healthData}>
@@ -669,6 +886,45 @@ export function RiskTrendsScreen() {
                 ) : (
                   <div className="h-full flex items-center justify-center text-xs font-mono text-gray-500">
                     Awaiting server ingestion logs to build trends graph...
+                  </div>
+                )}
+                {/* ── CHART EVENT MARKER TOOLTIP POPOVER ── */}
+                {clickedEvent && (
+                  <div
+                    className="absolute z-30 p-3 rounded-lg shadow-lg border animate-slide-up"
+                    style={{
+                      left: Math.max(10, Math.min(clickedEvent.x - 100, 480)),
+                      top: Math.max(5, clickedEvent.y - 110),
+                      width: 200,
+                      background: c.cardBg,
+                      borderColor: c.cardBorder,
+                      color: c.bodyText,
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span style={{ fontFamily: "DM Mono, monospace", fontSize: 9, color: c.bodyMuted }}>{clickedEvent.dateStr}</span>
+                      <button onClick={() => setClickedEvent(null)} className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-gray-400">
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 600, color: clickedEvent.color }}>
+                      {clickedEvent.event.title}
+                    </div>
+                    <div style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.bodySecondary, marginTop: 2, marginBottom: 6, lineHeight: 1.3 }}>
+                      {clickedEvent.event.description}
+                    </div>
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span style={{ fontFamily: "DM Mono, monospace", color: RISK_COLOR, fontWeight: 600 }}>Score: {clickedEvent.value}</span>
+                      <button
+                        onClick={() => {
+                          navigate(`/cardiac-diary?date=${clickedEvent.dateStr}`);
+                        }}
+                        className="text-[#E8304A] hover:underline font-semibold"
+                        style={{ fontFamily: "Syne, sans-serif" }}
+                      >
+                        View in diary
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -725,7 +981,7 @@ export function RiskTrendsScreen() {
                       <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.bodyText, fontWeight: 500 }}>{a.name}</div>
                       <div style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.bodySecondary }}>{a.duration}</div>
                     </div>
-                    <button className="hover:underline" style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.red, flexShrink: 0 }}>View ECG</button>
+                    <button onClick={() => setActiveEcgAlert(a)} className="hover:underline cursor-pointer" style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.red, flexShrink: 0 }}>View ECG</button>
                   </div>
                 ))}
               </div>
@@ -774,7 +1030,7 @@ export function RiskTrendsScreen() {
                   : "Overall metrics stay close to your baseline values. Physiological recovery rates indicate a slight latency."}
               </p>
               <div className="flex justify-end mt-3">
-                <button className="flex items-center gap-1.5 px-4 py-2 rounded-lg hover:opacity-90" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
+                <button onClick={() => setShareModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg hover:opacity-90 cursor-pointer" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 13 }}>
                   <Share2 size={13} /> Share comparison report
                 </button>
               </div>
@@ -804,8 +1060,163 @@ export function RiskTrendsScreen() {
             </div>
           )}
 
-        </div>
       </div>
+    </div>
+
+      {/* ── ECG WAVEFORM PLAYER MODAL ── */}
+      {activeEcgAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-xl overflow-hidden shadow-2xl border" style={{ background: c.cardBg, borderColor: c.cardBorder }}>
+            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${c.cardBorder}` }}>
+              <div className="flex items-center gap-2">
+                <Heart className="animate-pulse" style={{ color: "#E8304A" }} size={18} />
+                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 16, fontWeight: 600, color: c.bodyText }}>
+                  ECG Waveform Player
+                </span>
+              </div>
+              <button onClick={() => setActiveEcgAlert(null)} className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer" style={{ color: c.bodySecondary }}>
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-6 flex flex-col gap-4">
+              <div>
+                <div style={{ fontFamily: "DM Mono, monospace", fontSize: 11, color: c.bodyMuted }}>{activeEcgAlert.date}</div>
+                <div style={{ fontFamily: "Syne, sans-serif", fontSize: 18, fontWeight: 600, color: c.bodyText, marginTop: 2 }}>{activeEcgAlert.name}</div>
+                <div style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.bodySecondary, marginTop: 1 }}>Duration: {activeEcgAlert.duration}</div>
+              </div>
+
+              <div className="rounded-lg overflow-hidden border" style={{ borderColor: c.cardBorder }}>
+                <EcgWaveformPlayer type={activeEcgAlert.name.toLowerCase().includes("irregular") ? "irregular" : "normal"} />
+              </div>
+
+              <div className="flex items-center justify-between" style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: c.bodyMuted }}>
+                <span>Lead II • Continuous Stream</span>
+                <span>25 mm/s • 10 mm/mV</span>
+              </div>
+            </div>
+
+            <div className="px-6 py-3 flex justify-end gap-2" style={{ borderTop: `1px solid ${c.cardBorder}`, background: c.chipBg }}>
+              <button
+                onClick={() => handlePrintEcgReport(activeEcgAlert)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 cursor-pointer"
+                style={{ background: "transparent", border: `1px solid ${c.cardBorder}`, color: c.bodyText, fontFamily: "Syne, sans-serif" }}
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={() => setActiveEcgAlert(null)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 cursor-pointer"
+                style={{ background: "#E8304A", color: "#fff", fontFamily: "Syne, sans-serif" }}
+              >
+                Close Viewer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SHARE REPORT MODAL ── */}
+      {shareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl overflow-hidden shadow-2xl border" style={{ background: c.cardBg, borderColor: c.cardBorder }}>
+            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${c.cardBorder}` }}>
+              <div className="flex items-center gap-2">
+                <Share2 style={{ color: "#E8304A" }} size={18} />
+                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 16, fontWeight: 600, color: c.bodyText }}>
+                  Share Cardiac Trend Report
+                </span>
+              </div>
+              <button onClick={() => { setShareModalOpen(false); setCopyStatus(false); setDownloadStatus(false); }} className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer" style={{ color: c.bodySecondary }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 flex flex-col gap-4">
+              <p style={{ fontFamily: "Syne, sans-serif", fontSize: 13, lineHeight: 1.5, color: c.bodySecondary }}>
+                Generate a secure, clinical-grade summary report of your cardiac trends for the past <strong>{rangeLabels[range]}</strong> to share with your physician or family.
+              </p>
+
+              {/* Report Preview card */}
+              <div className="p-4 rounded-lg border flex flex-col gap-3" style={{ background: c.chipBg, borderColor: c.cardBorder }}>
+                <div className="flex justify-between items-center">
+                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, fontWeight: 600, color: c.bodyMuted }}>REPORT PREVIEW</span>
+                  <span className="px-2 py-0.5 rounded text-[9px] font-mono" style={{ background: "rgba(39,194,138,0.15)", color: "#27C28A" }}>Ready</span>
+                </div>
+                
+                <div style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 600, color: c.bodyText }}>
+                  CardiShirt Trend Digest (Adnan)
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs" style={{ fontFamily: "DM Mono, monospace" }}>
+                  <div>
+                    <span style={{ color: c.bodyMuted }}>Period:</span> <span style={{ color: c.bodyText }}>{rangeLabels[range]}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: c.bodyMuted }}>Avg Score:</span> <span style={{ color: RISK_COLOR, fontWeight: 600 }}>{RISK_SCORE}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: c.bodyMuted }}>Vitals Quality:</span> <span style={{ color: "#27C28A" }}>98.2% NSR</span>
+                  </div>
+                  <div>
+                    <span style={{ color: c.bodyMuted }}>Alerts Logged:</span> <span style={{ color: "#E8304A" }}>{alertHistory.length}</span>
+                  </div>
+                </div>
+                
+                <div className="text-[11px] italic" style={{ fontFamily: "Syne, sans-serif", color: c.bodySecondary }}>
+                  "Includes 24h average Heart Rate, SpO2 stability metrics, and detailed anomaly timelines."
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2 mt-2">
+                <button
+                  onClick={() => {
+                    const simulatedLink = `https://cardishirt.care/report/adnan?range=${range}&token=9d2k84a`;
+                    navigator.clipboard.writeText(simulatedLink);
+                    setCopyStatus(true);
+                    setTimeout(() => setCopyStatus(false), 2000);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
+                  style={{
+                    background: copyStatus ? "rgba(39,194,138,0.1)" : "transparent",
+                    border: `1px solid ${copyStatus ? "#27C28A" : c.cardBorder}`,
+                    color: copyStatus ? "#27C28A" : c.bodyText,
+                    fontFamily: "Syne, sans-serif"
+                  }}
+                >
+                  {copyStatus ? <CheckCircle size={16} /> : <Share2 size={16} />}
+                  {copyStatus ? "Link Copied!" : "Copy Shareable Link"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setDownloadStatus(true);
+                    setTimeout(() => {
+                      setDownloadStatus(false);
+                      handlePrintComparisonReport();
+                    }, 1200);
+                  }}
+                  disabled={downloadStatus}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-95 cursor-pointer"
+                  style={{
+                    background: "#E8304A",
+                    fontFamily: "Syne, sans-serif",
+                    opacity: downloadStatus ? 0.7 : 1
+                  }}
+                >
+                  {downloadStatus ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <FileText size={16} />
+                  )}
+                  {downloadStatus ? "Generating PDF..." : "Download Clinical PDF"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

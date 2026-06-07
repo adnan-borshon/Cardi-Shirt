@@ -106,9 +106,10 @@ app.post("/api/esp32/data", async (req, res) => {
       lastInsertTime = now;
     }
     if (now - lastEcgSaveTime >= 600000 && accumulatedEcg.length > 0) {
-      db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary)VALUES(?,?)", [
+      db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp)VALUES(?,?,?)", [
         JSON.stringify(accumulatedEcg),
         "",
+        new Date().toISOString()
       ]);
       persist();
       io.emit("ecg_session");
@@ -149,12 +150,19 @@ app.get("/api/ecg-records", async (_req, res) => {
       "SELECT id,waveform_data,ai_summary,timestamp FROM ecg_sessions ORDER BY id DESC",
     );
     if (!rows.length || !rows[0].values.length) return res.json([]);
-    const records = rows[0].values.map((r) => ({
-      id: r[0],
-      waveform_data: JSON.parse(r[1] || "[]"),
-      ai_summary: r[2] || "",
-      timestamp: r[3],
-    }));
+    const records = rows[0].values.map((r) => {
+      let ts = r[3];
+      if (ts && !ts.endsWith("Z") && !ts.includes("+")) {
+        // Convert SQLite datetime('now') space-separated string to ISO-8601 UTC string
+        ts = ts.replace(" ", "T") + "Z";
+      }
+      return {
+        id: r[0],
+        waveform_data: JSON.parse(r[1] || "[]"),
+        ai_summary: r[2] || "",
+        timestamp: ts,
+      };
+    });
     res.json(records);
   } catch (err) {
     console.error("[ECG] Fetch error:", err.message);
@@ -178,11 +186,18 @@ app.get("/api/daily-summaries", async (_req, res) => {
       "SELECT id,summary,timestamp FROM daily_summaries ORDER BY id DESC",
     );
     if (!rows.length || !rows[0].values.length) return res.json([]);
-    const summaries = rows[0].values.map((r) => ({
-      id: r[0],
-      summary: r[1],
-      created_at: r[2],
-    }));
+    const summaries = rows[0].values.map((r) => {
+      let ts = r[2];
+      if (ts && !ts.endsWith("Z") && !ts.includes("+")) {
+        // Convert SQLite datetime('now') space-separated string to ISO-8601 UTC string
+        ts = ts.replace(" ", "T") + "Z";
+      }
+      return {
+        id: r[0],
+        summary: r[1],
+        created_at: ts,
+      };
+    });
     res.json(summaries);
   } catch (err) {
     console.error("[SUMMARY] Fetch error:", err.message);
