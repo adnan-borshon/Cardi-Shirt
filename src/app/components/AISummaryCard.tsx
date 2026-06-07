@@ -4,6 +4,21 @@ import {useDailySummaries} from "./useBackend";
 
 const FALLBACK_SUMMARY="Gathering enough data to generate your first AI summary. Please wait until the next summary cycle (08:00 or 20:00).";
 
+function parseInlineStyles(text: string, tk: any) {
+  if (!text) return "";
+  const parts = text.split("**");
+  return parts.map((part, idx) => {
+    if (idx % 2 === 1) {
+      return (
+        <strong key={idx} style={{ color: tk.textPrimary, fontWeight: 700 }}>
+          {part}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
 export function AISummaryCard(){
 const tk=useTokens();
 const{summaries,loading}=useDailySummaries();
@@ -32,7 +47,7 @@ style={{background:tk.cardBg,border:`0.5px solid ${tk.cardBorder}`,boxShadow:tk.
 </div>
 ):(
 <p style={{color:tk.textPrimary,fontFamily:"'DM Serif Display', serif",fontSize:15,lineHeight:1.65}}>
-{summary}
+{parseInlineStyles(summary, tk)}
 </p>
 )}
 <div className="flex items-center justify-between mt-4 flex-wrap gap-2">

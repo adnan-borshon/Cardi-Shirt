@@ -29,41 +29,51 @@ const ECG_TEMPLATE_LEAD_III = [
 const LEAD_TEMPLATES = [ECG_TEMPLATE_LEAD_I, ECG_TEMPLATE_LEAD_II, ECG_TEMPLATE_LEAD_III];
 const filterChips = ["All", "Flagged", "Normal", "Manual"];
 
+function parseInlineStyles(text: string, tk: any) {
+  if (!text) return "";
+  const parts = text.split("**");
+  return parts.map((part, idx) => {
+    if (idx % 2 === 1) {
+      return (
+        <strong key={idx} style={{ color: tk.textPrimary, fontWeight: 700 }}>
+          {part}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
 function renderMarkdown(md: string, tk: any) {
   if (!md) return null;
   const lines = md.split("\n");
   return lines.map((line, idx) => {
     const l = line.trim();
-    if (!l) return null;
+    if (!l) return <div key={idx} className="h-2" />;
+    
+    // Headings (e.g. ### Title)
     if (l.startsWith("### ")) {
       return (
-        <h3 key={idx} style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 600, marginTop: 12, marginBottom: 6 }}>
-          {l.substring(4)}
+        <h3 key={idx} style={{ color: "#E8304A", fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 600, marginTop: 14, marginBottom: 6 }}>
+          {parseInlineStyles(l.substring(4), tk)}
         </h3>
       );
     }
-    if (l.startsWith("* **")) {
-      const match = l.match(/\* \*\*(.*?)\*\*(.*)/);
-      if (match) {
-        return (
-          <div key={idx} style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: tk.textPrimary, marginLeft: 8, marginBottom: 4 }}>
-            <strong style={{ color: tk.textSecondary, fontWeight: 600 }}>{match[1]}</strong>
-            {match[2]}
-          </div>
-        );
-      }
-    }
-    if (l.startsWith("* ")) {
+    
+    // Lists (e.g. * Item or - Item)
+    if (l.startsWith("* ") || l.startsWith("- ")) {
       return (
-        <div key={idx} style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: tk.textPrimary, marginLeft: 16, marginBottom: 4, position: "relative", paddingLeft: 10 }}>
-          <span style={{ position: "absolute", left: 0, color: "#E8304A" }}>•</span>
-          {l.substring(2)}
+        <div key={idx} style={{ fontFamily: "Inter, sans-serif", fontSize: 12.5, color: tk.textPrimary, marginLeft: 16, marginBottom: 5, position: "relative", paddingLeft: 12, lineHeight: 1.5 }}>
+          <span style={{ position: "absolute", left: 0, color: "#E8304A", fontWeight: "bold" }}>•</span>
+          {parseInlineStyles(l.substring(2), tk)}
         </div>
       );
     }
+    
+    // Paragraph
     return (
-      <p key={idx} style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 12, lineHeight: 1.6, marginBottom: 4 }}>
-        {l}
+      <p key={idx} style={{ color: tk.textPrimary, fontFamily: "Inter, sans-serif", fontSize: 12.5, lineHeight: 1.6, marginBottom: 6 }}>
+        {parseInlineStyles(l, tk)}
       </p>
     );
   });
@@ -165,6 +175,288 @@ export function ECGRecordsScreen() {
     } finally {
       setAnalyzingId(null);
     }
+  };
+
+  const handleExportPDF = () => {
+    if (!selectedSession) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow popups to export the report.");
+      return;
+    }
+
+    const waveform = selectedSession._waveform || [];
+    let svgContent = "";
+    if (waveform.length > 0) {
+      const maxPoints = 2000;
+      const step = Math.max(1, Math.ceil(waveform.length / maxPoints));
+      const points: number[] = [];
+      for (let i = 0; i < waveform.length; i += step) {
+        if (typeof waveform[i] === "number") {
+          points.push(waveform[i]);
+        }
+      }
+      if (points.length > 0) {
+        const svgWidth = 1000;
+        const svgHeight = 150;
+        const minVal = Math.min(...points);
+        const maxVal = Math.max(...points);
+        const range = maxVal - minVal || 1;
+        
+        const pathD = points.map((val, idx) => {
+          const x = (idx / (points.length - 1)) * svgWidth;
+          const norm = (val - minVal) / range;
+          const y = svgHeight - (norm * (svgHeight - 20) + 10);
+          return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+        }).join(' ');
+
+        svgContent = `
+          <div class="ecg-chart-container">
+            <h3>ECG Waveform Visualization</h3>
+            <svg viewBox="0 0 ${svgWidth} ${svgHeight}" class="ecg-svg">
+              <defs>
+                <pattern id="smallGrid" width="4" height="4" patternUnits="userSpaceOnUse">
+                  <path d="M 4 0 L 0 0 0 4" fill="none" stroke="rgba(232, 48, 74, 0.15)" stroke-width="0.5"/>
+                </pattern>
+                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <rect width="20" height="20" fill="url(#smallGrid)"/>
+                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(232, 48, 74, 0.35)" stroke-width="0.8"/>
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#grid)" />
+              <path d="${pathD}" fill="none" stroke="#E8304A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+            </svg>
+          </div>
+        `;
+      }
+    }
+
+    const summaryHtml = selectedSession._aiSummary
+      ? selectedSession._aiSummary.split("\n").map((line: string) => {
+          const l = line.trim();
+          if (!l) return "";
+          if (l.startsWith("### ")) {
+            return `<h3>${l.substring(4)}</h3>`;
+          }
+          if (l.startsWith("* ") || l.startsWith("- ")) {
+            const content = l.substring(2).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+            return `<li>${content}</li>`;
+          }
+          const content = l.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+          return `<p>${content}</p>`;
+        }).join("")
+      : "<p>No clinical AI summary available.</p>";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>CardiShirt Report - ${selectedSession.date}</title>
+          <style>
+            body {
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              color: #2D3748;
+              line-height: 1.6;
+              padding: 40px;
+              max-width: 900px;
+              margin: 0 auto;
+              background-color: #fff;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 2px solid #E8304A;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .logo {
+              font-size: 26px;
+              font-weight: 800;
+              color: #E8304A;
+              letter-spacing: -0.5px;
+            }
+            .title {
+              text-align: right;
+            }
+            .title h1 {
+              margin: 0;
+              font-size: 22px;
+              color: #1A202C;
+              font-weight: 700;
+            }
+            .title p {
+              margin: 5px 0 0 0;
+              font-size: 13px;
+              color: #718096;
+            }
+            .meta-grid {
+              display: grid;
+              grid-template-cols: repeat(2, 1fr);
+              gap: 20px;
+              margin-bottom: 30px;
+              background: #F7FAFC;
+              border: 1px solid #E2E8F0;
+              padding: 24px;
+              border-radius: 12px;
+            }
+            .meta-item span {
+              font-size: 11px;
+              color: #A0AEC0;
+              text-transform: uppercase;
+              font-weight: 600;
+              letter-spacing: 0.5px;
+              display: block;
+              margin-bottom: 4px;
+            }
+            .meta-item strong {
+              font-size: 16px;
+              color: #2D3748;
+              font-weight: 600;
+            }
+            .ecg-chart-container {
+              margin-bottom: 30px;
+            }
+            .ecg-chart-container h3 {
+              color: #1A202C;
+              font-size: 15px;
+              margin-bottom: 12px;
+              border-bottom: 1px solid #E2E8F0;
+              padding-bottom: 6px;
+              font-weight: 600;
+            }
+            .ecg-svg {
+              border: 1px solid #E2E8F0;
+              border-radius: 8px;
+              background: #FFF5F5;
+              width: 100%;
+              height: auto;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            }
+            .report-section {
+              margin-bottom: 30px;
+            }
+            .report-section h2 {
+              font-size: 15px;
+              color: #E8304A;
+              border-bottom: 1.5px solid #E8304A;
+              padding-bottom: 6px;
+              margin-bottom: 16px;
+              text-transform: uppercase;
+              letter-spacing: 0.8px;
+              font-weight: 700;
+            }
+            .summary-content h3 {
+              font-size: 14px;
+              color: #2D3748;
+              margin-top: 20px;
+              margin-bottom: 10px;
+              font-weight: 600;
+            }
+            .summary-content p {
+              font-size: 14px;
+              margin-bottom: 12px;
+              color: #4A5568;
+            }
+            .summary-content li {
+              font-size: 14px;
+              margin-bottom: 8px;
+              color: #4A5568;
+              margin-left: 20px;
+            }
+            .notes-box {
+              background: #F7FAFC;
+              border-left: 4px solid #E8304A;
+              padding: 20px;
+              font-size: 14px;
+              border-radius: 0 8px 8px 0;
+              color: #4A5568;
+            }
+            .footer {
+              margin-top: 60px;
+              border-top: 1px solid #E2E8F0;
+              padding-top: 24px;
+              text-align: center;
+              font-size: 11px;
+              color: #A0AEC0;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="logo">
+              💓 CardiShirt
+            </div>
+            <div class="title">
+              <h1>ECG Diagnostic Report</h1>
+              <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+            </div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span>Patient Name</span>
+              <strong>Adnan Borshon</strong>
+            </div>
+            <div class="meta-item">
+              <span>Session Date & Time</span>
+              <strong>${selectedSession.date} at ${selectedSession.time}</strong>
+            </div>
+            <div class="meta-item">
+              <span>Signal Metrics</span>
+              <strong>${selectedSession.hrRange} (${selectedSession.duration})</strong>
+            </div>
+            <div class="meta-item">
+              <span>AI Status Verdict</span>
+              <strong style="color: ${selectedSession.aiStatus === 'alert' ? '#E8304A' : '#27C28A'}">
+                ${selectedSession.aiStatusText}
+              </strong>
+            </div>
+          </div>
+
+          ${svgContent}
+
+          <div class="report-section">
+            <h2>Clinical AI Summary</h2>
+            <div class="summary-content">
+              ${summaryHtml}
+            </div>
+          </div>
+
+          <div class="report-section">
+            <h2>Notes & Observations</h2>
+            <div class="notes-box">
+              <strong>Patient Note:</strong> Felt slightly short of breath after walking up Dhanmondi stairs. Triggered manual ECG capture.
+              ${doctorNote ? `<br/><br/><strong>Observer Note:</strong> ${doctorNote}` : ""}
+            </div>
+          </div>
+
+          <div class="footer">
+            This document is an automated clinical summary generated by CardiShirt Health Companion.<br/>
+            It does not replace professional medical advice, diagnosis, or treatment.
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   // Custom multi-lead canvas renderer
@@ -435,8 +727,7 @@ export function ECGRecordsScreen() {
               <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(232, 48, 74, 0.1)", color: "#E8304A", fontFamily: "DM Mono, monospace", fontSize: 10 }}>{selectedSession.duration}</span>
             </div>
             <div className="flex items-center gap-2">
-              <button className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: tk.textSecondary }} title="Export PDF"><FileText size={16} /></button>
-              <button className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: tk.textSecondary }} title="Export CSV"><Download size={16} /></button>
+              <button onClick={handleExportPDF} className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ color: tk.textSecondary }} title="Export PDF"><FileText size={16} /></button>
             </div>
           </div>
 

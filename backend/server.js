@@ -227,20 +227,27 @@ app.post("/api/chat", async (req, res) => {
     }
     let reply = "Chatbot unavailable.";
     if (geminiModel && genAI) {
-      const systemInstructionText = `You are CardiShirt AI, a supportive, empathetic health companion for the user (Adnan) who wears a CardiShirt smart medical wearable.
+      const systemInstructionText = `You are CardiShirt AI, a supportive cardiac health companion for the user (Adnan).
 Here is the user's latest vital data:
 ${vitalsSummary}
-Guidelines:
-1. Be conversational and professional. Address the user as Adnan when appropriate.
-2. Use the vitals context to answer user questions about their current heart rate, SpO2, temp, etc.
-3. If they report chest pain, shortness of breath, dizziness or their vitals show high risk, advise seeking immediate medical attention and add: "I am an AI, not a doctor. Please consult a healthcare professional for clinical advice."
-4. Keep responses concise and use clear markdown formatting.
-5. Maintain context across the conversation using the provided chat history.`;
+
+STRICT RESPONSE RULES:
+1. Conciseness: Keep answers extremely short, direct, and under 2-3 sentences. Do not use generic explanations or unnecessary details.
+2. Direct Identity: If asked who/what you are, reply in one direct sentence: "I am CardiShirt AI, your cardiac health companion."
+3. Vitals: Refer to the vital numbers only when asked or if they indicate high risk.
+4. Disclaimer: If chest pain, dizziness, or abnormal vitals are mentioned, tell them to seek help and add: "I am an AI, not a doctor. Please consult a healthcare professional for clinical advice."
+5. Memory: Maintain flow and refer to context from previous messages.`;
       const chatModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite", systemInstruction: systemInstructionText });
-      const formattedHistory = history.map(h => ({
-        role: h.role === "user" ? "user" : "model",
-        parts: [{ text: h.text }]
-      }));
+      const formattedHistory = [];
+      for (const h of history) {
+        const role = h.role === "user" ? "user" : "model";
+        if (formattedHistory.length === 0 && role !== "user") continue;
+        if (formattedHistory.length > 0 && formattedHistory[formattedHistory.length - 1].role === role) {
+          formattedHistory[formattedHistory.length - 1].parts[0].text += "\n" + h.text;
+        } else {
+          formattedHistory.push({ role, parts: [{ text: h.text }] });
+        }
+      }
       const chat = chatModel.startChat({ history: formattedHistory });
       const aiRes = await chat.sendMessage(userMessage);
       reply = aiRes.response.text();

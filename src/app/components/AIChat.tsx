@@ -3,6 +3,32 @@ import { Send, Mic, Sparkles, Activity } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTokens } from "./ThemeContext";
 
+function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: T) => T)) => void] {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.log(error);
+      return initialValue;
+    }
+  });
+
+  const setValue = (value: T | ((val: T) => T)) => {
+    try {
+      setStoredValue((prev) => {
+        const valueToStore = value instanceof Function ? value(prev) : value;
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        return valueToStore;
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
+
 interface Message {
   id: number;
   from: "ai" | "user";
@@ -20,7 +46,7 @@ const initialMessages: Message[] = [
 const quickPrompts = ["Is my heart okay today?", "How was my sleep last night?", "What should I avoid today?"];
 
 export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useLocalStorage<Message[]>("cs_chat_messages", initialMessages);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -32,21 +58,29 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
-    setMessages((prev) => [...prev, { id: Date.now(), from: "user", text, time: "Now" }]);
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newUserMsg: Message = { id: Date.now(), from: "user", text, time: timeStr };
+    const updatedMessages = [...messages, newUserMsg];
+    setMessages(updatedMessages);
     setInput("");
     setTyping(true);
     
     try {
+      const historyPayload = messages.map(msg => ({
+        role: msg.from === "user" ? "user" : "model",
+        text: msg.text
+      }));
+
       const res = await fetch("http://localhost:4000/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userMessage: text })
+        body: JSON.stringify({ userMessage: text, history: historyPayload })
       });
       const data = await res.json();
-      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: data.reply || "Sorry, I could not generate a response.", time: "Now", hasECG: text.toLowerCase().includes("heart") && Math.random() > 0.5 }]);
+      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: data.reply || "Sorry, I could not generate a response.", time: timeStr, hasECG: text.toLowerCase().includes("heart") && Math.random() > 0.5 }]);
     } catch (e) {
       console.error(e);
-      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: "Connection error. Ensure the backend is running.", time: "Now" }]);
+      setMessages((prev) => [...prev, { id: Date.now() + 1, from: "ai", text: "Connection error. Ensure the backend is running.", time: timeStr }]);
     }
     setTyping(false);
   };
@@ -55,10 +89,17 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
     <div className={`flex flex-col ${isMobile ? "h-[500px]" : "h-full"}`} style={{ background: tk.cardBg }}>
       {/* Header */}
       <div className="px-4 py-3 flex-shrink-0" style={{ borderBottom: `0.5px solid ${tk.cardBorder}` }}>
-        <div className="flex items-center gap-2 mb-1">
-          <Sparkles size={16} style={{ color: "#E8304A" }} />
-          <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 15 }}>CardiShirt AI</span>
-          <div className="w-1.5 h-1.5 rounded-full bg-[#27C28A] animate-pulse" />
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} style={{ color: "#E8304A" }} />
+            <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 15 }}>CardiShirt AI</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-[#27C28A] animate-pulse" />
+          </div>
+          {messages.length > initialMessages.length && (
+            <button onClick={() => { if (window.confirm("Clear chat history?")) setMessages(initialMessages); }} className="hover:underline transition-opacity" style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, background: "none", border: "none", cursor: "pointer" }}>
+              Clear Chat
+            </button>
+          )}
         </div>
         <p style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Has access to your full cardiac history</p>
         <div className="mt-1.5 px-2 py-0.5 rounded-full w-fit" style={{ background: tk.chipBg, color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 9 }}>
