@@ -40,77 +40,24 @@ export function VitalsRow() {
 
   const isActive = connected && isHardwareActive && vitals;
 
-  // --- Real-time math calculations derived from ESP32 data ---
-  const bpm = isActive ? Math.round(vitals.bpm) : 0;
-  const temp = isActive ? vitals.temp : 0;
-  const spo2 = isActive && vitals.spo2 ? Math.round(vitals.spo2) : 0;
+  // Server-computed clinical values — NO local math.
+  // All values are pre-computed in Python DSP and received via WebSocket.
+  // null = DSP unavailable or insufficient data for that metric.
+  const bpm    = isActive ? Math.round(vitals.bpm) : 0;
+  const temp   = isActive ? vitals.temp : 0;
+  const spo2   = isActive && vitals.spo2 ? Math.round(vitals.spo2) : 0;
 
-  // 1. Calculate dynamic AI Health Score based on vital deviations
-  const getAIHealthScore = () => {
-    if (!isActive || bpm === 0) return null;
-    let baseScore = 95;
-    
-    // Deduct for heart rate deviations (normal range 60-95)
-    if (bpm > 95) baseScore -= (bpm - 95) * 0.4;
-    else if (bpm < 60) baseScore -= (60 - bpm) * 0.6;
+  const aiScore       = isActive ? (vitals.ai_health_score   ?? null) : null;
+  const hrv           = isActive ? (vitals.hrv_rmssd          ?? null) : null;
+  const breathingRate = isActive ? (vitals.breathing_rate     ?? null) : null;
+  const stressIndex   = isActive ? (vitals.stress_index       ?? null) : null;
+  const rPeakInterval = isActive ? (vitals.r_peak_interval_ms ?? null) : null;
 
-    // Deduct for body temperature deviations (normal range 36.1 - 37.2)
-    if (temp > 37.2) baseScore -= (temp - 37.2) * 8;
-    else if (temp < 36.1) baseScore -= (36.1 - temp) * 6;
-
-    // Deduct for SpO2 drop (normal range >= 95)
-    if (spo2 > 0 && spo2 < 95) baseScore -= (95 - spo2) * 3;
-
-    return Math.max(15, Math.min(100, Math.round(baseScore)));
-  };
-  const aiScore = getAIHealthScore();
-
-  // 2. Dynamic Heart Rate Variability (HRV) simulation with natural respiratory sinus arrhythmia fluctuation
-  const getHRV = () => {
-    if (!isActive || bpm === 0) return null;
-    const timeFactor = Date.now() / 45000;
-    // HRV typically decreases as Heart Rate increases
-    const hrScale = Math.max(0.4, 1.2 - (bpm - 70) / 60);
-    const baseHrv = 45 * hrScale;
-    const oscillation = Math.sin(timeFactor) * 4;
-    const noise = Math.random() * 2 - 1;
-    return Math.round(baseHrv + oscillation + noise);
-  };
-  const hrv = getHRV();
-
-  // 3. Breathing Rate: derived from ECG amplitude modulation (normally 12-18 BPM)
-  const getBreathingRate = () => {
-    if (!isActive || bpm === 0) return null;
-    const timeFactor = Date.now() / 30000;
-    // Breathing rate scales slightly with exertion/heart rate
-    const baseBr = bpm / 4.6;
-    const oscillation = Math.cos(timeFactor) * 1.2;
-    return Math.round(baseBr + oscillation);
-  };
-  const breathingRate = getBreathingRate();
-
-  // 4. Stress Index: derived from HRV and Heart Rate
-  const getStressIndex = () => {
-    if (!isActive || bpm === 0 || !hrv) return null;
-    // Lower HRV + Higher Heart Rate = Higher Stress
-    const hrvContribution = Math.max(0, 70 - hrv) * 0.8;
-    const bpmContribution = Math.max(0, bpm - 60) * 0.4;
-    return Math.max(10, Math.min(99, Math.round(15 + hrvContribution + bpmContribution)));
-  };
-  const stressIndex = getStressIndex();
-
-  // 5. R-Peak Interval: exact mathematical derivation (60,000 / BPM in milliseconds)
-  const rPeakInterval = isActive && bpm > 0 ? Math.round(60000 / bpm) : null;
-
-  // 6. ST Segment deviation (simulated based on ECG stability, normally +0.1 to +0.2 mV)
-  const getSTSegment = () => {
-    if (!isActive || bpm === 0) return null;
-    // Abnormal heart rate might skew ST segment
-    if (bpm > 115) return "+0.35";
-    if (bpm < 48) return "-0.15";
-    return "+0.15";
-  };
-  const stSegment = getSTSegment();
+  // Format ST float as "+0.12" or "-0.05" for display
+  const stSegmentRaw = isActive ? (vitals.st_deviation_mv ?? null) : null;
+  const stSegment    = stSegmentRaw !== null
+    ? (stSegmentRaw >= 0 ? `+${stSegmentRaw.toFixed(2)}` : stSegmentRaw.toFixed(2))
+    : null;
 
   // Define Cards
   const cards = [

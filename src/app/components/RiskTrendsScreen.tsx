@@ -597,9 +597,14 @@ export function RiskTrendsScreen() {
         return d;
       }
       
-      const bpmVal = d.avgBpm || 72;
-      const spo2Val = d.avgSpo2 || 97;
-      const s = Math.round(Math.max(40, Math.min(100, 100 - Math.abs(72 - bpmVal) - Math.max(0, 95 - spo2Val) * 4)));
+      let s: number;
+      if (d.avgScore != null && d.avgScore > 0) {
+        s = Math.round(d.avgScore);
+      } else {
+        const bpmVal = d.avgBpm || 72;
+        const spo2Val = d.avgSpo2 || 97;
+        s = Math.round(Math.max(40, Math.min(100, 100 - Math.abs(72 - bpmVal) - Math.max(0, 95 - spo2Val) * 4)));
+      }
       totalScore += s;
       
       let event: any = undefined;

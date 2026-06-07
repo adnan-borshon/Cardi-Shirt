@@ -8,6 +8,32 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cron = require("node-cron");
 const { calculateBPM, calculateSpO2 } = require("./signalProcessing");
 
+// ---------- Python DSP Microservice Caller ----------
+/**
+ * Calls dsp_service.py at localhost:5001. Returns computed clinical metrics
+ * or null if Python is unreachable. Timeout: 3 seconds.
+ */
+async function callDSP(payload) {
+  return new Promise((resolve) => {
+    const body = JSON.stringify(payload);
+    const req  = http.request(
+      { hostname:"localhost", port:5001, path:"/analyze", method:"POST",
+        headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body)},
+        timeout: 3000 },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+      }
+    );
+    req.on("error",   () => resolve(null));
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.write(body);
+    req.end();
+  });
+}
+
+
 let lastInsertTime = 0;
 let accumulatedEcg = [];
 let lastEcgSaveTime = Date.now();
@@ -62,83 +88,85 @@ let accumulatedVitals = { bpm: [], temp: [], spo2: [], fall_detected: false };
 let lastTwilioTime = 0;
 app.post("/api/esp32/data", async (req, res) => {
   try {
-    const {
-      temp = 0,
-      fall_detected = false,
-      ecg_array = null,
-      ir_array = [],
-      red_array = [],
-    } = req.body;
-    const bpm = calculateBPM(ir_array);
-    const spo2 = calculateSpO2(ir_array, red_array);
+    const { temp=0, fall_detected=false, ecg_array=null, ir_array=[], red_array=[] } = req.body;
+
+    // Primary path — Python DSP
+    const dsp = await callDSP({ ecg_array: ecg_array||[], ir_array, red_array, temp, current_bpm:0 });
+
+    // Fallback to JS if Python unavailable
+    const bpm  = dsp?.bpm  ?? calculateBPM(ir_array);
+    const spo2 = dsp?.spo2 ?? calculateSpO2(ir_array, red_array);
+    const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
+    const st_deviation_mv = dsp?.st_deviation_mv  ?? null;
+    const breathing_rate  = dsp?.breathing_rate   ?? null;
+    const stress_index    = dsp?.stress_index     ?? null;
+    const r_peak_interval = dsp?.r_peak_interval_ms ?? null;
+    const ai_health_score = dsp?.ai_health_score  ?? null;
+
+    dsp
+      ? console.log(`[DATA+DSP] bpm=${bpm} spo2=${spo2} hrv=${hrv_rmssd} st=${st_deviation_mv} score=${ai_health_score}`)
+      : console.warn(`[DATA-FALLBACK] Python DSP unreachable — bpm=${bpm} spo2=${spo2}`);
+
     accumulatedVitals.bpm.push(bpm);
     accumulatedVitals.temp.push(temp);
     accumulatedVitals.spo2.push(spo2);
     if (fall_detected) accumulatedVitals.fall_detected = true;
-    if (Array.isArray(ecg_array))
-      accumulatedEcg = accumulatedEcg.concat(ecg_array);
+    if (Array.isArray(ecg_array)) accumulatedEcg = accumulatedEcg.concat(ecg_array);
+
     const db = await getDb();
-    const ts = new Date().toISOString();
+    const ts  = new Date().toISOString();
     const now = Date.now();
+
     if (now - lastInsertTime >= 120000) {
-      const avgBpm =
-        accumulatedVitals.bpm.reduce((a, b) => a + b, 0) /
-          accumulatedVitals.bpm.length || 0;
-      const avgTemp =
-        accumulatedVitals.temp.reduce((a, b) => a + b, 0) /
-          accumulatedVitals.temp.length || 0;
-      const avgSpo2 =
-        accumulatedVitals.spo2.reduce((a, b) => a + b, 0) /
-          accumulatedVitals.spo2.length || 0;
-      const fall = accumulatedVitals.fall_detected ? 1 : 0;
+      const avgBpm  = accumulatedVitals.bpm.reduce((a,b)=>a+b,0)  / accumulatedVitals.bpm.length  || 0;
+      const avgTemp = accumulatedVitals.temp.reduce((a,b)=>a+b,0) / accumulatedVitals.temp.length || 0;
+      const avgSpo2 = accumulatedVitals.spo2.reduce((a,b)=>a+b,0) / accumulatedVitals.spo2.length || 0;
+
       db.run(
-        "INSERT INTO realtime_vitals(bpm,temp,spo2,fall_detected,timestamp)VALUES(?,?,?,?,?)",
-        [
-          Math.round(avgBpm),
-          parseFloat(avgTemp.toFixed(1)),
-          Math.round(avgSpo2),
-          fall,
-          ts,
-        ],
+        `INSERT INTO realtime_vitals
+           (bpm,temp,spo2,fall_detected,timestamp,
+            hrv_rmssd,st_deviation_mv,breathing_rate,stress_index,ai_health_score)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [Math.round(avgBpm), parseFloat(avgTemp.toFixed(1)), Math.round(avgSpo2),
+         accumulatedVitals.fall_detected?1:0, ts,
+         hrv_rmssd, st_deviation_mv, breathing_rate, stress_index, ai_health_score]
       );
       persist();
-      accumulatedVitals = { bpm: [], temp: [], spo2: [], fall_detected: false };
+      accumulatedVitals = { bpm:[], temp:[], spo2:[], fall_detected:false };
       lastInsertTime = now;
     }
+
     if (now - lastEcgSaveTime >= 600000 && accumulatedEcg.length > 0) {
-      db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp)VALUES(?,?,?)", [
-        JSON.stringify(accumulatedEcg),
-        "",
-        new Date().toISOString()
-      ]);
+      db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp)VALUES(?,?,?)",
+             [JSON.stringify(accumulatedEcg), "", new Date().toISOString()]);
       persist();
       io.emit("ecg_session");
-      accumulatedEcg = [];
+      accumulatedEcg  = [];
       lastEcgSaveTime = now;
     }
-    const vitals = { bpm, spo2, temp, fall_detected, ecg_array, timestamp: ts };
-    io.emit("vitals", vitals);
-    if (fall_detected && twilioClient && now - lastTwilioTime >= 600000) {
+
+    io.emit("vitals", {
+      bpm, spo2, temp, fall_detected, ecg_array, timestamp:ts,
+      hrv_rmssd, st_deviation_mv, breathing_rate, stress_index,
+      r_peak_interval_ms: r_peak_interval, ai_health_score,
+    });
+
+    if (fall_detected && twilioClient && now-lastTwilioTime >= 600000) {
       try {
         await twilioClient.messages.create({
           body: `🚨 CARDISHIRT SOS 🚨\nFALL DETECTED\nBPM: ${bpm} | Temp: ${temp}°C\nTrack live location: https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}`,
-          from: process.env.TWILIO_PHONE_FROM,
-          to: process.env.EMERGENCY_PHONE_TO,
+          from: process.env.TWILIO_PHONE_FROM, to: process.env.EMERGENCY_PHONE_TO,
         });
         console.log("[SOS] SMS sent");
         lastTwilioTime = now;
-      } catch (err) {
-        console.error("[SOS] Twilio error:", err);
-      }
-      io.emit("sos", { reason: "FALL DETECTED", bpm, temp, timestamp: ts });
+      } catch(e) { console.error("[SOS]", e); }
+      io.emit("sos", { reason:"FALL DETECTED", bpm, temp, timestamp:ts });
     }
-    console.log(
-      `[DATA] bpm=${bpm} spo2=${spo2} temp=${temp} fall=${fall_detected}`,
-    );
-    res.json({ ok: true });
-  } catch (err) {
+
+    res.json({ ok:true });
+  } catch(err) {
     console.error("[ESP32] Error:", err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok:false, error:err.message });
   }
 });
 
@@ -299,7 +327,7 @@ app.get("/api/diary/summary", async (req, res) => {
 });
 
 // ---------- Phase 3: GET Trends (Dynamic Fallback) ----------
-app.get("/api/trends",async(req,res)=>{try{const{range}=req.query;let days=30;if(range==="7d")days=7;if(range==="90d")days=90;if(range==="1y")days=365;const db=await getDb();const countRows=db.exec(`SELECT COUNT(DISTINCT DATE(timestamp)) as uniqueDays FROM realtime_vitals WHERE timestamp>=datetime('now','-${days} days')`);const uniqueDays=countRows.length&&countRows[0].values.length?countRows[0].values[0][0]:0;let rows;if(uniqueDays>=2){rows=db.exec(`SELECT DATE(timestamp) as day,AVG(bpm) as avgBpm,AVG(spo2) as avgSpo2,AVG(temp) as avgTemp FROM realtime_vitals WHERE timestamp>=datetime('now','-${days} days') GROUP BY DATE(timestamp) ORDER BY day ASC`);}else{rows=db.exec(`SELECT strftime('%Y-%m-%d %H:00',timestamp) as day,AVG(bpm) as avgBpm,AVG(spo2) as avgSpo2,AVG(temp) as avgTemp FROM realtime_vitals WHERE timestamp>=datetime('now','-1 days') GROUP BY strftime('%Y-%m-%d %H:00',timestamp) ORDER BY day ASC`);console.log("[TRENDS] Fallback: grouping by hour (uniqueDays="+uniqueDays+")");}if(!rows.length||!rows[0].values.length)return res.json([]);const data=rows[0].values.map(r=>({day:r[0],avgBpm:Math.round(r[1]),avgSpo2:Math.round(r[2]),avgTemp:parseFloat(r[3].toFixed(1))}));res.json(data);}catch(err){console.error("[TRENDS]",err.message);res.status(500).json({error:err.message});}});
+app.get("/api/trends",async(req,res)=>{try{const{range}=req.query;let days=30;if(range==="7d")days=7;if(range==="90d")days=90;if(range==="1y")days=365;const db=await getDb();const countRows=db.exec(`SELECT COUNT(DISTINCT DATE(timestamp)) as uniqueDays FROM realtime_vitals WHERE timestamp>=datetime('now','-${days} days')`);const uniqueDays=countRows.length&&countRows[0].values.length?countRows[0].values[0][0]:0;let rows;if(uniqueDays>=2){rows=db.exec(`SELECT DATE(timestamp) as day,AVG(bpm) as avgBpm,AVG(spo2) as avgSpo2,AVG(temp) as avgTemp,AVG(hrv_rmssd) as avgHrv,AVG(ai_health_score) as avgScore FROM realtime_vitals WHERE timestamp>=datetime('now','-${days} days') GROUP BY DATE(timestamp) ORDER BY day ASC`);}else{rows=db.exec(`SELECT strftime('%Y-%m-%d %H:00',timestamp) as day,AVG(bpm) as avgBpm,AVG(spo2) as avgSpo2,AVG(temp) as avgTemp,AVG(hrv_rmssd) as avgHrv,AVG(ai_health_score) as avgScore FROM realtime_vitals WHERE timestamp>=datetime('now','-1 days') GROUP BY strftime('%Y-%m-%d %H:00',timestamp) ORDER BY day ASC`);console.log("[TRENDS] Fallback: grouping by hour (uniqueDays="+uniqueDays+")");}if(!rows.length||!rows[0].values.length)return res.json([]);const data=rows[0].values.map(r=>({day:r[0],avgBpm:Math.round(r[1]),avgSpo2:Math.round(r[2]),avgTemp:parseFloat(r[3].toFixed(1)),avgHrv:r[4]!=null?parseFloat(r[4].toFixed(1)):null,avgScore:r[5]!=null?Math.round(r[5]):null}));res.json(data);}catch(err){console.error("[TRENDS]",err.message);res.status(500).json({error:err.message});}});
 
 // ---------- Boot ----------
 (async () => {

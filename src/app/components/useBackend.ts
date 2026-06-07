@@ -11,12 +11,20 @@ _socket=io(API_URL,{transports:["websocket","polling"],reconnection:true,reconne
 return _socket;
 }
 
-export interface LiveVitals{
-bpm:number;
-temp:number;
-fall_detected:boolean;
-ecg_array?:number[];
-timestamp:string;
+export interface LiveVitals {
+  bpm: number;
+  temp: number;
+  fall_detected: boolean;
+  ecg_array?: number[];
+  timestamp: string;
+  // Clinical metrics from Python DSP — null when DSP unavailable
+  spo2?: number;
+  hrv_rmssd?: number | null;
+  st_deviation_mv?: number | null;
+  breathing_rate?: number | null;
+  stress_index?: number | null;
+  r_peak_interval_ms?: number | null;
+  ai_health_score?: number | null;
 }
 
 export interface SOSEvent{

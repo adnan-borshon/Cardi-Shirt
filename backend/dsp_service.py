@@ -8,6 +8,10 @@ Clinically referenced algorithms:
   - Baevsky Stress Index from R-R histogram
   - SpO2: quadratic calibration curve (A - B*R + C*R^2)
 """
+import sys
+print("[DSP] Starting CardiShirt DSP Microservice...")
+print("[DSP] Loading heavy clinical ML libraries (scipy, neurokit2) - this may take 10-20 seconds on Windows...")
+sys.stdout.flush()
 
 from flask import Flask, request, jsonify
 import numpy as np
@@ -280,5 +284,6 @@ def health():
 
 
 if __name__ == "__main__":
+    print("[DSP] Libraries loaded successfully!")
     print("[DSP] CardiShirt DSP Microservice — port 5001")
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    app.run(host="127.0.0.1", port=5001, debug=False)
