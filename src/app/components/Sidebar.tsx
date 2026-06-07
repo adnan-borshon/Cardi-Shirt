@@ -95,7 +95,7 @@ export function Sidebar({}: SidebarProps) {
             { id: "dark", color: "#141629", border: "#4A5070" },
             { id: "light", color: "#FFFFFF", border: "#D1D5DB" },
             { id: "ocean", color: "#0A1929", border: "#668EBA" },
-            { id: "nature", color: "#F2F7F4", border: "#7B9E86" },
+            { id: "nature", color: "#0F1A15", border: "#7B9E86" },
           ].map((t) => (
             <button
               key={t.id}

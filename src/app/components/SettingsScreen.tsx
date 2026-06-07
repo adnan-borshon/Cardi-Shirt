@@ -371,11 +371,12 @@ const ViewECGModal = ({ alertItem, onClose }: { alertItem: any; onClose: () => v
 
 const PerMemberAlertsModal = ({ onClose }: { onClose: () => void }) => {
   const c = useColors();
-  const [members, setMembers] = useLocalStorage("cs_per_member_alerts", [
-    { name: "Rehnuma (Daughter)", push: true, sms: true, call: true },
-    { name: "Rumi (Son)", push: true, sms: true, call: false },
-    { name: "Jabed (Spouse)", push: false, sms: true, call: false },
-  ]);
+  const [storedContacts] = useLocalStorage<any[]>("cs_emergency_contacts", []);
+  const defaultMembers = storedContacts.map((c: any) => ({
+    name: `${c.name} (${c.role?.split(' ·')[0] || 'Contact'})`,
+    push: true, sms: true, call: c.pri === 1,
+  }));
+  const [members, setMembers] = useLocalStorage("cs_per_member_alerts", defaultMembers);
 
   const toggleVal = (index: number, key: 'push' | 'sms' | 'call') => {
     setMembers(prev => {
@@ -530,7 +531,23 @@ const PrivacyPolicyModal = ({ onClose }: { onClose: () => void }) => {
 
 const ManageStorageModal = ({ onClose }: { onClose: () => void }) => {
   const c = useColors();
-  const [sizes, setSizes] = useState({ ecg: "2.1 GB", logs: "150 MB", cache: "150 KB" });
+  const computeStorageSizes = () => {
+    let ecgBytes = 0, logBytes = 0, cacheBytes = 0;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        const val = localStorage.getItem(key) || "";
+        const bytes = new Blob([val]).size;
+        if (key.includes('ecg') || key.includes('waveform')) ecgBytes += bytes;
+        else if (key.includes('alert') || key.includes('diary') || key.includes('checkin')) logBytes += bytes;
+        else cacheBytes += bytes;
+      }
+    } catch(e) { /* ignore */ }
+    const fmt = (b: number) => b > 1048576 ? `${(b/1048576).toFixed(1)} MB` : b > 1024 ? `${(b/1024).toFixed(0)} KB` : `${b} B`;
+    return { ecg: fmt(ecgBytes), logs: fmt(logBytes), cache: fmt(cacheBytes) };
+  };
+  const [sizes, setSizes] = useState(computeStorageSizes);
 
   return (
     <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
@@ -590,9 +607,18 @@ const ExportDataModal = ({ onClose }: { onClose: () => void }) => {
         clearInterval(interval);
         setDone(true);
         try {
+          const pFirstName = localStorage.getItem('cs_first_name') ? JSON.parse(localStorage.getItem('cs_first_name')!) : 'N/A';
+          const pLastName = localStorage.getItem('cs_last_name') ? JSON.parse(localStorage.getItem('cs_last_name')!) : '';
+          const pBlood = localStorage.getItem('cs_blood_type') ? JSON.parse(localStorage.getItem('cs_blood_type')!) : 'N/A';
+          const pDob = localStorage.getItem('cs_dob') ? JSON.parse(localStorage.getItem('cs_dob')!) : 'N/A';
+          const pSN = localStorage.getItem('cs_shirt_sn') ? JSON.parse(localStorage.getItem('cs_shirt_sn')!) : 'N/A';
+          const pBaseRange = localStorage.getItem('cs_baseline_range') ? JSON.parse(localStorage.getItem('cs_baseline_range')!) : 'Not established';
+          const pBaseDate = localStorage.getItem('cs_baseline_date') ? JSON.parse(localStorage.getItem('cs_baseline_date')!) : 'Not established';
+          const pAlerts = localStorage.getItem('cs_alert_history') ? JSON.parse(localStorage.getItem('cs_alert_history')!) : [];
+
           const doc = new jsPDF();
           doc.setFontSize(22);
-          doc.setTextColor(232, 48, 74); // CardiShirt Red
+          doc.setTextColor(232, 48, 74);
           doc.text("CardiShirt Clinical Profile", 20, 20);
           
           doc.setFontSize(14);
@@ -600,26 +626,36 @@ const ExportDataModal = ({ onClose }: { onClose: () => void }) => {
           doc.text("Patient Information:", 20, 35);
           doc.setFontSize(12);
           doc.setTextColor(80, 80, 80);
-          doc.text("Name: Adnan Uddin", 25, 45);
-          doc.text("Blood Type: B+", 25, 52);
-          doc.text("Sensor SN: CS-2026-DK-00142", 25, 59);
+          doc.text(`Name: ${pFirstName} ${pLastName}`, 25, 45);
+          doc.text(`Date of Birth: ${pDob}`, 25, 52);
+          doc.text(`Blood Type: ${pBlood}`, 25, 59);
+          doc.text(`Sensor SN: ${pSN}`, 25, 66);
           
           doc.setFontSize(14);
           doc.setTextColor(40, 40, 40);
-          doc.text("Vitals Baseline:", 20, 74);
+          doc.text("Vitals Baseline:", 20, 81);
           doc.setFontSize(12);
           doc.setTextColor(80, 80, 80);
-          doc.text("Resting HR: 58-74 BPM", 25, 84);
-          doc.text("Baseline Established: 12 Feb 2026", 25, 91);
+          doc.text(`Resting HR: ${pBaseRange}`, 25, 91);
+          doc.text(`Baseline Established: ${pBaseDate}`, 25, 98);
           
-          doc.setFontSize(14);
-          doc.setTextColor(40, 40, 40);
-          doc.text("Recent Clinical Activity:", 20, 106);
-          doc.setFontSize(12);
-          doc.setTextColor(80, 80, 80);
-          doc.text("- AI summary generated (Today 1:15 PM)", 25, 116);
-          doc.text("- 14-day tracking streak achieved (Yesterday)", 25, 123);
-          doc.text("- New 3-lead ECG recorded (Mon 9:15 AM)", 25, 130);
+          if (pAlerts.length > 0) {
+            doc.setFontSize(14);
+            doc.setTextColor(40, 40, 40);
+            doc.text("Recent Alert History:", 20, 113);
+            doc.setFontSize(12);
+            doc.setTextColor(80, 80, 80);
+            pAlerts.slice(0, 5).forEach((a: any, i: number) => {
+              doc.text(`- ${a.type} (${a.date} ${a.time})`, 25, 123 + i * 7);
+            });
+          } else {
+            doc.setFontSize(14);
+            doc.setTextColor(40, 40, 40);
+            doc.text("Recent Alert History:", 20, 113);
+            doc.setFontSize(12);
+            doc.setTextColor(80, 80, 80);
+            doc.text("No alerts recorded.", 25, 123);
+          }
           
           doc.setFontSize(10);
           doc.setTextColor(150, 150, 150);
@@ -931,6 +967,163 @@ const SupportModal = ({ label, onClose }: { label: string; onClose: () => void }
   );
 };
 
+const PairShirtModal = ({ setShirtName, setShirtSN, onClose }: any) => {
+  const c = useColors();
+  const [step, setStep] = useState<"enter" | "scanning" | "done">("enter");
+  const [name, setName] = useState("");
+  const [sn, setSn] = useState("");
+  const [progress, setProgress] = useState(0);
+
+  const startPairing = () => {
+    if (!name.trim() || !sn.trim()) return;
+    setStep("scanning");
+    let count = 0;
+    const interval = setInterval(() => {
+      count += 4;
+      setProgress(count);
+      if (count >= 100) {
+        clearInterval(interval);
+        setStep("done");
+        setShirtName(name.trim());
+        setShirtSN(sn.trim());
+      }
+    }, 80);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 text-sm" style={{ fontFamily: "Syne, sans-serif" }}>
+      {step === "enter" && (
+        <>
+          <p style={{ color: c.secondary }}>Enter the details printed on the inside label of your CardiShirt, or scan the QR code on the shirt's transmitter pod.</p>
+          <div>
+            <label className="text-xs block mb-1" style={{ color: c.secondary }}>Shirt Model Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. CardiShirt Pro · 3-Lead"
+              className="w-full p-2.5 rounded-lg outline-none"
+              style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, color: c.text, fontFamily: "Syne, sans-serif", fontSize: 14 }}
+            />
+          </div>
+          <div>
+            <label className="text-xs block mb-1" style={{ color: c.secondary }}>Serial Number</label>
+            <input
+              type="text"
+              value={sn}
+              onChange={e => setSn(e.target.value)}
+              placeholder="e.g. CS-2026-DK-00142"
+              className="w-full p-2.5 rounded-lg outline-none"
+              style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, color: c.text, fontFamily: "DM Mono, monospace", fontSize: 14 }}
+            />
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg cursor-pointer" style={{ color: c.secondary }}>Cancel</button>
+            <button
+              onClick={startPairing}
+              disabled={!name.trim() || !sn.trim()}
+              className="px-4 py-2 rounded-lg font-semibold cursor-pointer"
+              style={{ background: c.red, color: "#fff", opacity: (!name.trim() || !sn.trim()) ? 0.5 : 1 }}
+            >
+              Pair Shirt
+            </button>
+          </div>
+        </>
+      )}
+      {step === "scanning" && (
+        <div className="text-center py-4 flex flex-col gap-3">
+          <div className="flex justify-center mb-2">
+            <Wifi size={40} className="animate-pulse" style={{ color: c.blue }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Pairing with CardiShirt</div>
+          <p style={{ color: c.secondary, fontSize: 13 }}>Searching for {name}...</p>
+          <div className="w-full bg-gray-200 rounded-full h-2 mt-2 overflow-hidden dark:bg-gray-700">
+            <div className="h-2 rounded-full" style={{ width: `${progress}%`, background: c.blue, transition: "width 0.1s" }} />
+          </div>
+          <span className="text-xs font-mono" style={{ color: c.muted }}>{progress}%</span>
+        </div>
+      )}
+      {step === "done" && (
+        <div className="text-center py-4 flex flex-col gap-3">
+          <div className="flex justify-center mb-2">
+            <CheckCircle size={48} style={{ color: c.green }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Shirt Paired Successfully</div>
+          <p style={{ color: c.secondary, fontSize: 13 }}>
+            <strong style={{ color: c.text }}>{name}</strong> (SN: <code className="font-mono text-xs">{sn}</code>) is now connected and ready for monitoring.
+          </p>
+          <div className="flex justify-center mt-2">
+            <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CheckFirmwareUpdatesModal = ({ currentVersion, setFirmwareVersion, setFirmwareDate, onClose }: any) => {
+  const c = useColors();
+  const [status, setStatus] = useState("Connecting to update server...");
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const steps = [
+      "Connecting to update server...",
+      "Reading device firmware...",
+      "Comparing versions...",
+      "Firmware is up to date"
+    ];
+    let count = 0;
+    const interval = setInterval(() => {
+      count += 5;
+      setProgress(count);
+      const idx = Math.floor((count / 100) * steps.length);
+      if (steps[idx]) setStatus(steps[idx]);
+      if (count >= 100) {
+        clearInterval(interval);
+        const today = new Date();
+        const formattedDate = `${today.getDate()} ${today.toLocaleString('en-US', { month: 'short' })} ${today.getFullYear()}`;
+        setFirmwareDate(formattedDate);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [setFirmwareDate]);
+
+  return (
+    <div className="flex flex-col gap-4 text-center py-4" style={{ fontFamily: "Syne, sans-serif" }}>
+      {progress < 100 ? (
+        <>
+          <div className="flex justify-center mb-2">
+            <RefreshCw size={36} className="animate-spin" style={{ color: c.blue }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Checking Firmware</div>
+          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden dark:bg-gray-700">
+            <div className="h-2 rounded-full" style={{ width: `${progress}%`, background: c.blue }} />
+          </div>
+          <span className="text-xs font-mono" style={{ color: c.muted }}>{status}</span>
+        </>
+      ) : (
+        <>
+          <div className="flex justify-center mb-2">
+            <CheckCircle size={48} style={{ color: c.green }} />
+          </div>
+          <div className="font-semibold text-lg" style={{ color: c.text }}>Firmware Up To Date</div>
+          <p style={{ color: c.secondary, fontSize: 13 }}>
+            Your CardiShirt is running the latest firmware (<code className="font-mono text-xs">{currentVersion}</code>). No updates available.
+          </p>
+          <div className="flex justify-center mt-2">
+            <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-sm font-semibold cursor-pointer" style={{ background: c.red, color: "#fff" }}>
+              Done
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 /* ════════════════════════════════════════════
    SHARED TINY COMPONENTS
    ════════════════════════════════════════════ */
@@ -1025,7 +1218,7 @@ function TextLink({ label, color, onClick }: { label: string; color?: string; on
 /* ════════════════════════════════════════════
    CATEGORY NAV
    ════════════════════════════════════════════ */
-type Category = "profile" | "device" | "alerts" | "ai" | "display" | "privacy" | "emergency" | "about";
+type Category = "profile" | "alerts" | "ai" | "display" | "privacy" | "emergency" | "about";
 
 interface NavItem {
   id: Category;
@@ -1039,7 +1232,7 @@ function useCategoryItems(): NavItem[] {
   const c = useColors();
   return [
     { id: "profile", label: "Profile & Account", icon: User, iconColor: "#5B8AF0" },
-    { id: "device", label: "CardiShirt Device", icon: Shirt, iconColor: c.red, badge: <div style={{ width: 8, height: 8, borderRadius: 4, background: c.green }} /> },
+
     { id: "alerts", label: "Alerts & Notifications", icon: Bell, iconColor: c.amber },
     { id: "ai", label: "AI & Analysis", icon: Brain, iconColor: c.green },
     { id: "display", label: "Display & Language", icon: Globe, iconColor: "#5B8AF0", badge: <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, padding: "1px 6px", borderRadius: 8, background: c.strip, color: c.muted }}>EN</span> },
@@ -1254,7 +1447,7 @@ function ProfileSection({
         </SettingRow>
         <div className="pt-3">
           <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.muted }}>Account created · </span>
-          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>12 Feb 2026</span>
+          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>{(() => { try { const d = localStorage.getItem('cs_account_created'); return d ? JSON.parse(d) : 'N/A'; } catch { return 'N/A'; } })()}</span>
         </div>
       </SectionCard>
 
@@ -1357,324 +1550,6 @@ function MiniWaveform({ status, width = 40, height = 24 }: { status: LeadStatus;
   return <canvas ref={canvasRef} width={width} height={height} />;
 }
 
-function DeviceSection({ openModal }: any) {
-  const c = useColors();
-  const [shirtName, setShirtName] = useLocalStorage("cs_shirt_name", "CardiShirt Pro · 3-Lead");
-  const [shirtSN, setShirtSN] = useLocalStorage("cs_shirt_sn", "CS-2026-DK-00142");
-  const [firmwareVersion, setFirmwareVersion] = useLocalStorage("cs_firmware_version", "v2.4.1");
-  const [firmwareDate, setFirmwareDate] = useLocalStorage("cs_firmware_date", "18 Mar 2026");
-  const [testPhase, setTestPhase] = useState<"idle" | "step1" | "step2" | "results">("idle");
-  const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>(LEAD_NAMES.map(() => "idle"));
-  const [progress, setProgress] = useState(0);
-  const [testHistOpen, setTestHistOpen] = useState(false);
-  const [leadsEnabled, setLeadsEnabled] = useState(LEAD_NAMES.map(() => true));
-  const testInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const startTest = () => {
-    setTestPhase("step1");
-    setLeadStatuses(LEAD_NAMES.map(() => "idle"));
-    setProgress(0);
-
-    // After 3 seconds, move to step2 and animate leads
-    setTimeout(() => {
-      setTestPhase("step2");
-      let idx = 0;
-      testInterval.current = setInterval(() => {
-        if (idx < 3) {
-          setLeadStatuses(prev => {
-            const n = [...prev];
-            n[idx] = "checking";
-            if (idx > 0) n[idx - 1] = "good";
-            return n;
-          });
-          setProgress(((idx + 1) / 3) * 100);
-          idx++;
-        } else {
-          if (testInterval.current) clearInterval(testInterval.current);
-          setLeadStatuses(prev => {
-            const n = [...prev];
-            n[2] = "good";
-            return n;
-          });
-          setProgress(100);
-          setTimeout(() => setTestPhase("results"), 800);
-        }
-      }, 1500);
-    }, 3000);
-  };
-
-  const cancelTest = () => {
-    if (testInterval.current) clearInterval(testInterval.current);
-    setTestPhase("idle");
-    setLeadStatuses(LEAD_NAMES.map(() => "idle"));
-    setProgress(0);
-  };
-
-  const goodCount = leadStatuses.filter(s => s === "good").length;
-  const weakCount = leadStatuses.filter(s => s === "weak").length;
-
-  const testSteps = ["Put on the shirt", "Sit still", "Review results"];
-  const testStepIdx = testPhase === "step1" ? 0 : testPhase === "step2" ? 1 : testPhase === "results" ? 2 : -1;
-  const stepDescs = [
-    "Make sure all the electrode patches are flat against your skin and the shirt is snug but comfortable.",
-    "Stay seated and breathe normally. We're reading all 3 leads now.",
-    "Here's what we found.",
-  ];
-
-  const isDarkTest = testPhase !== "idle";
-
-  return (
-    <>
-      {/* Device Status */}
-      <SectionCard title="Device Status" icon={<Shirt size={18} />} iconColor={c.red}>
-        <div className="flex items-start gap-4 mb-4">
-          <div className="flex-1">
-            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500, color: c.text }}>{shirtName}</div>
-            <div style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: c.secondary }}>SN: {shirtSN}</div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Wifi size={14} style={{ color: c.green }} />
-            <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.green }}>Connected</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-          {[
-            { l: "Battery", v: "84%", icon: <BatteryMedium size={14} />, col: c.green },
-            { l: "Last sync", v: "12 sec ago", icon: <RefreshCw size={14} />, col: c.secondary },
-            { l: "Signal", v: "Strong", icon: <Wifi size={14} />, col: c.green },
-          ].map(s => (
-            <div key={s.l} className="p-3 rounded-lg" style={{ background: c.cardElevated }}>
-              <div className="flex items-center gap-1.5 mb-1" style={{ color: s.col }}>{s.icon}<span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: c.muted }}>{s.l}</span></div>
-              <span style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{s.v}</span>
-            </div>
-          ))}
-        </div>
-        <button onClick={() => openModal("Pair CardiShirt Device", <PairShirtModal setShirtName={setShirtName} setShirtSN={setShirtSN} onClose={() => openModal("", null)} />)} className="px-4 py-2 rounded-lg active:scale-95 transition-all cursor-pointer" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary, background: "transparent" }}>
-          Pair a new shirt
-        </button>
-      </SectionCard>
-
-      {/* Shirt Test */}
-      <div className="rounded-xl mb-5 overflow-hidden transition-all duration-200" style={{
-        background: isDarkTest ? "#0D0F1A" : c.cardBg,
-        borderWidth: 1, borderStyle: "solid",
-        borderColor: isDarkTest ? "rgba(100,120,200,0.15)" : c.cardBorder,
-        boxShadow: isDarkTest ? "0 8px 40px rgba(0,0,0,0.5)" : c.shadow,
-      }}>
-        {/* Header */}
-        <div className="px-5 py-4 flex items-center gap-2.5" style={{ borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: isDarkTest ? "rgba(100,120,200,0.1)" : c.divider }}>
-          <TestTube size={18} style={{ color: isDarkTest ? "#E8304A" : c.red }} />
-          <span style={{ fontFamily: "Syne, sans-serif", fontSize: 16, fontWeight: 500, color: isDarkTest ? "#F0F2FF" : c.text }}>Test your CardiShirt</span>
-        </div>
-
-        <div className="px-5 py-5">
-          {testPhase === "idle" && (
-            <>
-              <p style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: c.secondary, lineHeight: 1.6, marginBottom: 16 }}>
-                Run a quick test to confirm your shirt is reading correctly. Put the shirt on, sit still for 30 seconds, and CardiShirt will check all leads and confirm your heart signal is coming through clearly. This takes about 2 minutes.
-              </p>
-              <button onClick={startTest} className="w-full py-3 rounded-lg" style={{ background: c.red, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 15, fontWeight: 500 }}>
-                Start shirt test
-              </button>
-            </>
-          )}
-
-          {isDarkTest && (
-            <>
-              {/* Step Indicator */}
-              <div className="flex items-center gap-2 mb-5 flex-wrap">
-                {testSteps.map((s, i) => (
-                  <div key={s} className="flex items-center gap-2">
-                    <div className="flex items-center justify-center" style={{
-                      width: 26, height: 26, borderRadius: 13,
-                      background: i <= testStepIdx ? "#E8304A" : "rgba(100,120,200,0.15)",
-                      color: i <= testStepIdx ? "#fff" : "#4A5070",
-                      fontFamily: "DM Mono, monospace", fontSize: 12,
-                    }}>{i < testStepIdx ? <Check size={13} /> : i + 1}</div>
-                    <span style={{
-                      fontFamily: "Syne, sans-serif", fontSize: 14,
-                      color: i === testStepIdx ? "#F0F2FF" : "#4A5070",
-                      fontWeight: i === testStepIdx ? 500 : 400,
-                    }}>{s}</span>
-                    {i < testSteps.length - 1 && <div style={{ width: 20, height: 1, background: "rgba(100,120,200,0.15)" }} />}
-                  </div>
-                ))}
-              </div>
-
-              {/* Step Instruction */}
-              <p className="mb-5" style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: "#8890B8", lineHeight: 1.6 }}>
-                {stepDescs[testStepIdx] || ""}
-              </p>
-
-              {/* 3-Lead Grid */}
-              <div className="grid grid-cols-3 gap-2.5 mb-5">
-                {LEAD_NAMES.map((name, i) => {
-                  const st = leadStatuses[i];
-                  const borderCol = st === "good" ? "rgba(39,194,138,0.5)" : st === "weak" ? "rgba(245,166,35,0.5)" : st === "fail" ? "rgba(232,48,74,0.5)" : "rgba(100,120,200,0.1)";
-                  const dotCol = st === "good" ? "#27C28A" : st === "weak" ? "#F5A623" : st === "fail" ? "#E8304A" : "#4A5070";
-                  return (
-                    <div key={name} className="rounded-lg p-2 flex flex-col items-center justify-between" style={{
-                      background: "#141629", borderWidth: 0.5, borderStyle: "solid", borderColor: borderCol,
-                      height: 64, transition: "border-color 0.3s",
-                    }}>
-                      <span style={{ fontFamily: "Syne, sans-serif", fontSize: 11, color: "#8890B8", alignSelf: "flex-start" }}>{name}</span>
-                      <MiniWaveform status={st} />
-                      <div className="flex items-center gap-1 self-end">
-                        {st === "checking" && <RefreshCw size={9} style={{ color: "#8890B8" }} className="animate-spin" />}
-                        <div style={{ width: 6, height: 6, borderRadius: 3, background: dotCol, transition: "background 0.3s" }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Live ECG strip placeholder */}
-              {testPhase === "step2" && (
-                <div className="mb-4">
-                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: "#8890B8", display: "block", marginBottom: 4 }}>Live signal — Lead II</span>
-                  <div className="rounded-lg overflow-hidden" style={{ height: 80, background: "#0A0C16", position: "relative" }}>
-                    <ECGLiveStrip />
-                  </div>
-                </div>
-              )}
-
-              {/* Progress */}
-              {testPhase !== "results" && (
-                <div className="mb-4">
-                  <div className="w-full rounded-full overflow-hidden" style={{ height: 4, background: "rgba(100,120,200,0.1)" }}>
-                    <div style={{ width: `${progress}%`, height: "100%", background: "#E8304A", transition: "width 0.5s ease", borderRadius: 2 }} />
-                  </div>
-                  <div className="text-right mt-1"><span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: "#8890B8" }}>{Math.round(progress)}%</span></div>
-                </div>
-              )}
-
-              {/* Results */}
-              {testPhase === "results" && (
-                <div className="rounded-xl p-5 mb-4" style={{ background: "#1A1D35" }}>
-                  <div style={{ fontFamily: "Syne, sans-serif", fontSize: 18, color: weakCount > 0 ? c.amber : c.green, marginBottom: 8, lineHeight: 1.5 }}>
-                    {weakCount === 0
-                      ? `Your CardiShirt is reading well — all 3 leads have a good signal.`
-                      : `${goodCount} of 3 leads have a good signal — ${weakCount} lead${weakCount > 1 ? "s" : ""} need${weakCount === 1 ? "s" : ""} attention.`}
-                  </div>
-                  <p style={{ fontFamily: "Syne, sans-serif", fontSize: 14, color: "#8890B8", lineHeight: 1.6, marginBottom: 12 }}>
-                    {weakCount === 0
-                      ? "Everything looks good. You're ready to wear CardiShirt for monitoring."
-                      : "Lead III has a weak signal. Make sure the electrode patch on your left leg is flat against your skin, then run the test again."}
-                  </p>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <button
-                      onClick={() => {
-                        if (weakCount === 0) {
-                          alert("Monitoring started successfully! Your real-time vitals and ECG telemetry are now active.");
-                          cancelTest();
-                        } else {
-                          startTest();
-                        }
-                      }}
-                      className="px-5 py-2.5 rounded-lg cursor-pointer hover:opacity-90 active:scale-95 transition-transform"
-                      style={{ background: weakCount === 0 ? c.green : c.amber, color: "#fff", fontFamily: "Syne, sans-serif", fontSize: 14 }}
-                    >
-                      {weakCount === 0 ? "Start monitoring" : "Test again"}
-                    </button>
-                    <button onClick={cancelTest} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: "#8890B8", cursor: "pointer" }}>Close</button>
-                  </div>
-                </div>
-              )}
-
-              {/* Cancel */}
-              {testPhase !== "results" && (
-                <button onClick={cancelTest} style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: "#8890B8" }}>Cancel test</button>
-              )}
-
-              {/* Test History */}
-              {testPhase === "results" && (
-                <div className="mt-3">
-                  <button onClick={() => setTestHistOpen(!testHistOpen)} className="flex items-center gap-1" style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: "#8890B8" }}>
-                    View previous test results {testHistOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
-                  {testHistOpen && (
-                    <div className="mt-2 flex flex-col gap-1.5">
-                      {[
-                        { date: "2 Apr 2026", result: "12/12", col: "#27C28A" },
-                        { date: "28 Mar 2026", result: "11/12", col: "#F5A623" },
-                        { date: "20 Mar 2026", result: "12/12", col: "#27C28A" },
-                        { date: "14 Mar 2026", result: "12/12", col: "#27C28A" },
-                        { date: "1 Mar 2026", result: "10/12", col: "#F5A623" },
-                      ].map(h => (
-                        <div key={h.date} className="flex items-center gap-3 px-3 py-1.5 rounded" style={{ background: "#141629" }}>
-                          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: "#8890B8" }}>{h.date}</span>
-                          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: h.col }}>{h.result} leads</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Lead Configuration */}
-      <SectionCard title="Lead Configuration" icon={<Activity size={18} />} iconColor={c.blue}>
-        <p className="mb-3" style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.amber, lineHeight: 1.5 }}>
-          Disabling leads reduces monitoring coverage. Only change these settings if advised by your doctor.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {LEAD_NAMES.map((name, i) => (
-            <div key={name} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: c.cardElevated }}>
-              <div>
-                <span style={{ fontFamily: "Syne, sans-serif", fontSize: 14, fontWeight: 500, color: c.text }}>Lead {name}</span>
-                <span className="ml-2" style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.muted }}>
-                  {i < 3 ? "Limb lead" : i < 6 ? "Augmented" : "Precordial"}
-                </span>
-              </div>
-              <Toggle on={leadsEnabled[i]} onToggle={() => setLeadsEnabled(p => { const n = [...p]; n[i] = !n[i]; return n; })} size="sm" />
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {/* Firmware */}
-      <SectionCard title="Firmware & Maintenance" icon={<Zap size={18} />} iconColor={c.amber}>
-        <div className="flex items-center gap-4 mb-3">
-          <div>
-            <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Firmware version</span>
-            <span className="ml-2" style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{firmwareVersion}</span>
-          </div>
-          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 12, color: c.muted }}>Updated {firmwareDate}</span>
-        </div>
-        <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={() => openModal("CardiShirt Firmware Update", <CheckFirmwareUpdatesModal currentVersion={firmwareVersion} setFirmwareVersion={setFirmwareVersion} setFirmwareDate={setFirmwareDate} onClose={() => openModal("", null)} />)} className="px-4 py-2 rounded-lg active:scale-95 transition-all cursor-pointer" style={{ borderWidth: 1, borderStyle: "solid", borderColor: c.cardBorder, fontFamily: "Syne, sans-serif", fontSize: 13, color: c.text, background: "transparent" }}>Check for updates</button>
-          <TextLink label="Reset shirt connection" color={c.red} onClick={()=>{if(confirm("Are you sure you want to reset the CardiShirt Bluetooth connection?"))alert("Bluetooth connection reset. Reconnecting to shirt...");}} />
-          <TextLink label="Clear cached sensor data" color={c.secondary} onClick={()=>{if(confirm("Are you sure you want to clear cached sensor data from the device? This will free up local storage space on the shirt's built-in flash memory."))alert("Local sensor cache cleared successfully.");}} />
-        </div>
-      </SectionCard>
-    </>
-  );
-}
-
-/* ECG live strip mini animation */
-function ECGLiveStrip() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animRef = useRef<number>(0);
-  const offsetRef = useRef(0);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-
-    const ecgPattern = (x: number): number => {
-      const p = ((x % 100) + 100) % 100;
-      if (p < 10) return 0;
-      if (p < 20) return Math.sin((p - 10) / 10 * Math.PI) * 0.15;
-      if (p < 30) return 0;
-      if (p < 35) return -0.1;
       if (p < 40) return 0.75;
       if (p < 45) return -0.35;
       if (p < 55) return 0;
@@ -1718,6 +1593,8 @@ function AlertsSection({ openModal, alerts, setAlerts }: any) {
   const [smsOn, setSmsOn] = useLocalStorage("cs_smsOn", true);
   const [familyOn, setFamilyOn] = useLocalStorage("cs_familyOn", true);
   const [quietOn, setQuietOn] = useLocalStorage("cs_quietOn", false);
+  const [quietStart, setQuietStart] = useLocalStorage("cs_quietStart", "22:00");
+  const [quietEnd, setQuietEnd] = useLocalStorage("cs_quietEnd", "07:00");
   const [emergOverride, setEmergOverride] = useLocalStorage("cs_emergOverride", true);
 
   return (
@@ -1770,9 +1647,9 @@ function AlertsSection({ openModal, alerts, setAlerts }: any) {
             <Toggle on={quietOn} onToggle={() => setQuietOn(!quietOn)} />
             {quietOn && (
               <div className="flex items-center gap-1">
-                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: c.text }}>22:00</span>
+                <input type="time" value={quietStart} onChange={(e) => setQuietStart(e.target.value)} style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, borderRadius: 6, padding: "3px 6px", fontFamily: "DM Mono, monospace", fontSize: 13, color: c.text, outline: "none", width: 85 }} />
                 <span style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.muted }}>to</span>
-                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: c.text }}>07:00</span>
+                <input type="time" value={quietEnd} onChange={(e) => setQuietEnd(e.target.value)} style={{ background: c.inputBg, border: `1px solid ${c.inputBorder}`, borderRadius: 6, padding: "3px 6px", fontFamily: "DM Mono, monospace", fontSize: 13, color: c.text, outline: "none", width: 85 }} />
               </div>
             )}
           </div>
@@ -1829,10 +1706,10 @@ function AlertsSection({ openModal, alerts, setAlerts }: any) {
    ════════════════════════════════════════════ */
 function AISection({ openModal, baselineDate, setBaselineDate, baselineDays, setBaselineDays, baselineRange, setBaselineRange }: any) {
   const c = useColors();
-  const [freq, setFreq] = useState("Continuous");
-  const [summaryTime, setSummaryTime] = useState("20:00");
-  const [weekDay, setWeekDay] = useState("Sunday");
-  const [checkinOn, setCheckinOn] = useState(true);
+  const [freq, setFreq] = useLocalStorage("cs_analysis_freq", "Continuous");
+  const [summaryTime, setSummaryTime] = useLocalStorage("cs_summary_time", "20:00");
+  const [weekDay, setWeekDay] = useLocalStorage("cs_weekly_day", "Sunday");
+  const [checkinOn, setCheckinOn] = useLocalStorage("cs_checkin_on", true);
   const [aiDisclosure, setAiDisclosure] = useState(false);
 
   return (
@@ -1936,17 +1813,17 @@ function AISection({ openModal, baselineDate, setBaselineDate, baselineDays, set
 function DisplaySection() {
   const c = useColors();
   const { theme, toggle } = useTheme();
-  const [lang, setLang] = useState("English");
-  const [timeFormat, setTimeFormat] = useState("12h");
-  const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
-  const [bengaliNums, setBengaliNums] = useState(false);
-  const [themeMode, setThemeMode] = useState(theme === "dark" ? "Dark" : "Light");
-  const [textSize, setTextSize] = useState("Standard");
-  const [showFamily, setShowFamily] = useState(true);
-  const [showMeds, setShowMeds] = useState(true);
-  const [showCheckin, setShowCheckin] = useState(true);
-  const [showBaseline, setShowBaseline] = useState(true);
-  const [aiProactive, setAiProactive] = useState("Normal");
+  const [lang, setLang] = useLocalStorage("cs_lang", "English");
+  const [timeFormat, setTimeFormat] = useLocalStorage("cs_time_format", "12h");
+  const [dateFormat, setDateFormat] = useLocalStorage("cs_date_format", "DD/MM/YYYY");
+  const [bengaliNums, setBengaliNums] = useLocalStorage("cs_bengali_nums", false);
+  const [themeMode, setThemeMode] = useLocalStorage("cs_theme_mode", theme === "dark" ? "Dark" : "Light");
+  const [textSize, setTextSize] = useLocalStorage("cs_text_size", "Standard");
+  const [showFamily, setShowFamily] = useLocalStorage("cs_show_family", true);
+  const [showMeds, setShowMeds] = useLocalStorage("cs_show_meds", true);
+  const [showCheckin, setShowCheckin] = useLocalStorage("cs_show_checkin", true);
+  const [showBaseline, setShowBaseline] = useLocalStorage("cs_show_baseline", true);
+  const [aiProactive, setAiProactive] = useLocalStorage("cs_ai_proactive", "Normal");
 
   return (
     <>
@@ -2012,10 +1889,10 @@ function DisplaySection() {
    ════════════════════════════════════════════ */
 function PrivacySection({ openModal, sessions, setSessions }: any) {
   const c = useColors();
-  const [analytics, setAnalytics] = useState(true);
-  const [doctorShare, setDoctorShare] = useState(true);
-  const [qaShare, setQaShare] = useState(true);
-  const [appLock, setAppLock] = useState(false);
+  const [analytics, setAnalytics] = useLocalStorage("cs_analytics", true);
+  const [doctorShare, setDoctorShare] = useLocalStorage("cs_doctor_share", true);
+  const [qaShare, setQaShare] = useLocalStorage("cs_qa_share", true);
+  const [appLock, setAppLock] = useLocalStorage("cs_app_lock", false);
 
   return (
     <>
@@ -2030,7 +1907,7 @@ function PrivacySection({ openModal, sessions, setSessions }: any) {
         <div className="flex items-center gap-4 mb-3 flex-wrap">
           <div>
             <span style={{ fontFamily: "Syne, sans-serif", fontSize: 13, color: c.secondary }}>Local storage</span>
-            <span className="ml-2" style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>2.4 GB</span>
+            <span className="ml-2" style={{ fontFamily: "DM Mono, monospace", fontSize: 14, color: c.text }}>{(() => { try { let total = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) total += new Blob([localStorage.getItem(k) || '']).size; } return total > 1048576 ? `${(total/1048576).toFixed(1)} MB` : `${(total/1024).toFixed(0)} KB`; } catch { return 'N/A'; } })()}</span>
             <span className="ml-1" style={{ fontFamily: "Syne, sans-serif", fontSize: 12, color: c.muted }}>of ECG data</span>
           </div>
         </div>
@@ -2097,8 +1974,8 @@ function PrivacySection({ openModal, sessions, setSessions }: any) {
    ════════════════════════════════════════════ */
 function EmergencySection({ openModal, dispatchAddress, setDispatchAddress, dispatchPhone, setDispatchPhone, emergencyContacts, setEmergencyContacts }: any) {
   const c = useColors();
-  const [dispatchOn, setDispatchOn] = useState(true);
-  const [windowVal, setWindowVal] = useState(60);
+  const [dispatchOn, setDispatchOn] = useLocalStorage("cs_dispatch_on", true);
+  const [windowVal, setWindowVal] = useLocalStorage("cs_dispatch_window", 60);
   const [showTestResult, setShowTestResult] = useState(false);
 
   return (
@@ -2316,23 +2193,23 @@ export function SettingsScreen() {
   const [avatarBgColor, setAvatarBgColor] = useLocalStorage("cs_avatar_bgcolor", "#5B8AF0");
   const [avatarUrl, setAvatarUrl] = useLocalStorage<string | null>("cs_avatar_url", null);
 
-  const [alerts, setAlerts] = useLocalStorage("cs_alert_history", [
-    { date: "3 Apr 2026", time: "2:14 PM", type: "High HR Alert", color: "#E8304A" },
-    { date: "3 Apr 2026", time: "11:30 AM", type: "Rhythm Anomaly", color: "#F5A623" },
-    { date: "1 Apr 2026", time: "3:47 PM", type: "HRV Drop", color: "#5B8AF0" },
-    { date: "30 Mar 2026", time: "8:12 AM", type: "High HR Alert", color: "#E8304A" },
-    { date: "28 Mar 2026", time: "6:01 PM", type: "Rhythm Anomaly", color: "#F5A623" },
-  ]);
+  const [alerts, setAlerts] = useLocalStorage<any[]>("cs_alert_history", []);
 
   const [baselineDate, setBaselineDate] = useLocalStorage("cs_baseline_date", "12 Feb 2026");
   const [baselineDays, setBaselineDays] = useLocalStorage("cs_baseline_days", "50 days");
   const [baselineRange, setBaselineRange] = useLocalStorage("cs_baseline_range", "58–74 BPM");
 
-  const [sessions, setSessions] = useLocalStorage("cs_sessions", [
-    { device: "Adnan's Galaxy S24", last: "Active now", current: true },
-    { device: "Fatema's iPhone 15", last: "2 hours ago", current: false },
-    { device: "Chrome — Desktop", last: "Yesterday", current: false },
-  ]);
+  const [sessions, setSessions] = useLocalStorage("cs_sessions", (() => {
+    const ua = navigator.userAgent;
+    let deviceName = "This browser";
+    if (ua.includes("Chrome")) deviceName = "Chrome";
+    else if (ua.includes("Firefox")) deviceName = "Firefox";
+    else if (ua.includes("Safari")) deviceName = "Safari";
+    else if (ua.includes("Edge")) deviceName = "Edge";
+    if (ua.includes("Mobile")) deviceName += " — Mobile";
+    else deviceName += " — Desktop";
+    return [{ device: deviceName, last: "Active now", current: true }];
+  })());
 
   const [dispatchAddress, setDispatchAddress] = useLocalStorage("cs_dispatch_address", "42/3 Dhanmondi, Road 7A, Dhaka 1205");
   const [dispatchPhone, setDispatchPhone] = useLocalStorage("cs_dispatch_phone", "+880 1712-345678");
@@ -2379,7 +2256,7 @@ export function SettingsScreen() {
 
     switch (activeCategory) {
       case "profile": return <ProfileSection {...props} />;
-      case "device": return <DeviceSection openModal={openModal} />;
+
       case "alerts": return <AlertsSection {...props} />;
       case "ai": return <AISection {...props} />;
       case "display": return <DisplaySection />;
