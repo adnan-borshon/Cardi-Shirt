@@ -387,6 +387,7 @@ def analyze():
     if len(ecg_raw) >= fs * 2:
         ecg   = np.array(ecg_raw, dtype=float)
         filt  = bandpass_filter_ecg(ecg, fs=fs)
+        result["ecg_filtered"] = filt.tolist()
         peaks = detect_r_peaks(filt, fs=fs)
         detected_peaks = peaks
 

@@ -286,7 +286,15 @@ app.post("/api/esp32/data", (req, res) => {
       const ai_health_score = dsp?.ai_health_score  ?? null;
       const clinical_verdict = dsp?.clinical_verdict ?? null;
 
-      console.log(`[DSP] Received from Python -> BPM: ${finalBpm}, SpO2: ${finalSpo2}%, HRV: ${hrv_rmssd || "N/A"}ms, ST Dev: ${st_deviation_mv || "N/A"}mV, Health Score: ${ai_health_score || "N/A"}`);
+      // Slice the corresponding filtered chunk from Python DSP to remove noise
+      let finalEcgArray = ecg_array;
+      if (dsp && Array.isArray(dsp.ecg_filtered) && Array.isArray(ecg_array) && ecg_array.length > 0) {
+        const len = dsp.ecg_filtered.length;
+        const chunkLen = ecg_array.length;
+        finalEcgArray = len >= chunkLen ? dsp.ecg_filtered.slice(len - chunkLen) : dsp.ecg_filtered;
+      }
+
+      console.log(`[DSP] Received from Python -> BPM: ${finalBpm}, SpO2: ${finalSpo2}%, HRV: ${hrv_rmssd || "N/A"}ms, ST Dev: ${st_deviation_mv || "N/A"}mV, Health Score: ${ai_health_score || "N/A"} | Filtered ECG (first 5): ${finalEcgArray ? finalEcgArray.slice(0, 5).map(v => v.toFixed(1)).join(", ") : "N/A"}`);
 
       // Emit enriched vitals if DSP succeeded
       if (dsp) {
@@ -295,7 +303,7 @@ app.post("/api/esp32/data", (req, res) => {
           spo2: finalSpo2,
           temp,
           fall_detected,
-          ecg_array: ecg_array,
+          ecg_array: finalEcgArray,
           timestamp: new Date().toISOString(),
           hrv_rmssd,
           st_deviation_mv,
@@ -314,7 +322,7 @@ app.post("/api/esp32/data", (req, res) => {
       accumulatedVitals.temp.push(temp);
       accumulatedVitals.spo2.push(finalSpo2);
       if (fall_detected) accumulatedVitals.fall_detected = true;
-      if (Array.isArray(ecg_array)) accumulatedEcg = accumulatedEcg.concat(ecg_array);
+      if (Array.isArray(finalEcgArray)) accumulatedEcg = accumulatedEcg.concat(finalEcgArray);
 
       const db = await getDb();
       const ts  = new Date().toISOString();
