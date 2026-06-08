@@ -306,6 +306,7 @@ app.post("/api/esp32/data", (req, res) => {
           clinical_verdict,
           simulation_active: simulationActive,
           simulation_type: simulationType,
+          sample_rate: sample_rate,
         });
       }
 

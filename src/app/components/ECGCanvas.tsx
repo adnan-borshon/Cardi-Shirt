@@ -25,6 +25,7 @@ const ECG_TEMPLATE_LEAD_III = [
 ];
 
 const LEAD_TEMPLATES = {
+  "ESP Value": ECG_TEMPLATE_LEAD_II,
   "Lead I": ECG_TEMPLATE_LEAD_I,
   "Lead II": ECG_TEMPLATE_LEAD_II,
   "Lead III": ECG_TEMPLATE_LEAD_III,
@@ -45,7 +46,7 @@ export function ECGCanvas() {
   const lastActiveRef = useRef<number>(Date.now());
   const [isHardwareActive, setIsHardwareActive] = useState(false);
 
-  const [lead, setLead] = useState<"Lead I" | "Lead II" | "Lead III">("Lead II");
+  const [lead, setLead] = useState<"ESP Value" | "Lead I" | "Lead II" | "Lead III">("ESP Value");
   const [speed, setSpeed] = useState("25mm/s");
   const [showLeadDropdown, setShowLeadDropdown] = useState(false);
   const [showSimPanel, setShowSimPanel] = useState(false);
@@ -82,9 +83,18 @@ export function ECGCanvas() {
   const tkRef = useRef(tk);
   tkRef.current = tk;
 
+  const prevSimActiveRef = useRef<boolean>(false);
+
   // Track vital incoming timestamp updates
   useEffect(() => {
     if (vitals) {
+      const isSimActive = !!vitals.simulation_active;
+      if (isSimActive !== prevSimActiveRef.current) {
+        ecgDataBuffer.current = [];
+        drawPointerRef.current = 0;
+        prevSimActiveRef.current = isSimActive;
+      }
+
       lastActiveRef.current = Date.now();
       setIsHardwareActive(true);
 
@@ -119,7 +129,7 @@ export function ECGCanvas() {
       color: string,
       glowColor: string,
       noiseLevel = 0,
-      currentLead: "Lead I" | "Lead II" | "Lead III",
+      currentLead: "ESP Value" | "Lead I" | "Lead II" | "Lead III",
       isMini = false
     ) => {
       const tokens = tkRef.current;
@@ -160,7 +170,8 @@ export function ECGCanvas() {
       ctx.lineCap = "round";
       ctx.beginPath();
 
-      const pixelsPerSample = speed === "50mm/s" ? 5 : 3;
+      const sampleRate = vitals?.sample_rate || 250;
+      const pixelsPerSample = (speed === "50mm/s" ? 1.2 : 0.6) * (250 / sampleRate);
       const numSamples = Math.ceil(w / pixelsPerSample);
 
       if (isActiveConnection && ecgDataBuffer.current.length > 0) {
@@ -259,9 +270,12 @@ export function ECGCanvas() {
         const lag = bufferSize - currentPointer;
 
         // Proportional feedback controller to adjust step rate dynamically
-        const targetLag = 50; // Keep target buffer delay around 2 seconds of data (50 samples at 25Hz)
-        let step = 0.4167 + (lag - targetLag) * 0.01; // Base step is 25Hz / 60fps = 0.4167
-        step = Math.max(0.08, Math.min(2.0, step));
+        const sampleRate = vitals?.sample_rate || 250;
+        const fps = 60;
+        const baseStep = sampleRate / fps;
+        const targetLag = sampleRate * 2; // Keep target buffer delay around 2 seconds of data
+        let step = baseStep + (lag - targetLag) * 0.01;
+        step = Math.max(baseStep * 0.2, Math.min(baseStep * 5.0, step));
 
         if (bufferSize > 0) {
           drawPointerRef.current = Math.min(bufferSize, drawPointerRef.current + step);
@@ -314,7 +328,7 @@ export function ECGCanvas() {
     return () => cancelAnimationFrame(animId);
   }, [drawECG, lead, isActiveConnection]);
 
-  const leads: ("Lead I" | "Lead II" | "Lead III")[] = ["Lead I", "Lead II", "Lead III"];
+  const leads: ("ESP Value" | "Lead I" | "Lead II" | "Lead III")[] = ["ESP Value", "Lead I", "Lead II", "Lead III"];
   const miniLeads = ["Lead I", "Lead II", "Lead III"];
 
   // Dynamic status text for UI

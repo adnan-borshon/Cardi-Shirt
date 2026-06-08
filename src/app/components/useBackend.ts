@@ -46,6 +46,7 @@ export interface LiveVitals {
   // Simulation state
   simulation_active?: boolean;
   simulation_type?: string | null;
+  sample_rate?: number;
 }
 
 export interface SOSEvent{
@@ -80,11 +81,13 @@ const handleConnect=()=>setConnected(true);
 const handleDisconnect=()=>setConnected(false);
 const handleVitals=(data:LiveVitals)=>setVitals(data);
 const handleSos=(data:SOSEvent)=>setSos(data);
+const handleSimStopped=()=>setVitals(prev=>prev?{...prev,simulation_active:false,simulation_type:null}:null);
 
 s.on("connect",handleConnect);
 s.on("disconnect",handleDisconnect);
 s.on("vitals",handleVitals);
 s.on("sos",handleSos);
+s.on("simulation_stopped",handleSimStopped);
 
 setConnected(s.connected);
 
@@ -93,6 +96,7 @@ s.off("connect",handleConnect);
 s.off("disconnect",handleDisconnect);
 s.off("vitals",handleVitals);
 s.off("sos",handleSos);
+s.off("simulation_stopped",handleSimStopped);
 };
 },[s]);
 
