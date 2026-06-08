@@ -58,6 +58,7 @@ export function ECGCanvas() {
     { key: "arrhythmia", label: "PVC Arrhythmia", desc: "Premature ventricular contractions", color: "#E8304A" },
     { key: "ischemia", label: "STEMI / Ischemia", desc: "ST-Elevation myocardial injury", color: "#E8304A" },
     { key: "noisy", label: "Noisy Signal", desc: "50Hz interference + baseline wander", color: "#9B8EC4" },
+    { key: "fall", label: "Fall Detected (SOS)", desc: "Simulate a critical fall event", color: "#E8304A" },
   ];
 
   const handleStartSim = async (type: string) => {

@@ -11,6 +11,7 @@ import {
   Navigation, ShieldCheck, ShieldAlert, Share2, History
 } from "lucide-react";
 import { useTheme, useTokens } from "./ThemeContext";
+import { API_URL } from "./useBackend";
 import jsPDF from "jspdf";
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((val: T) => T)) => void] {
@@ -1998,10 +1999,21 @@ function EmergencySection({ openModal, dispatchAddress, setDispatchAddress, disp
           Simulate the full automatic dispatch countdown without sending any real notifications or calls. See exactly which contacts and services would be activated.
         </p>
         {!showTestResult ? (
-          <button onClick={() => setShowTestResult(true)} className="px-5 py-2.5 rounded-lg flex items-center gap-2 cursor-pointer active:scale-95 transition-transform" style={{
-            borderWidth: 1.5, borderStyle: "solid", borderColor: c.amber,
-            fontFamily: "Syne, sans-serif", fontSize: 14, color: c.amber, background: "transparent",
-          }}>
+          <button 
+            onClick={async () => {
+              setShowTestResult(true);
+              try {
+                await fetch(API_URL + "/api/telegram/dispatch", { method: "POST" });
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+            className="px-5 py-2.5 rounded-lg flex items-center gap-2 cursor-pointer active:scale-95 transition-transform" 
+            style={{
+              borderWidth: 1.5, borderStyle: "solid", borderColor: c.amber,
+              fontFamily: "Syne, sans-serif", fontSize: 14, color: c.amber, background: "transparent",
+            }}
+          >
             <Play size={16} /> Run dispatch test
           </button>
         ) : (

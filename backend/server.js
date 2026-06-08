@@ -107,9 +107,20 @@ if (TELEGRAM_BOT_TOKEN && chatIds.length > 0) {
 }
 
 function sendTelegramMessage(text) {
-  if (!TELEGRAM_BOT_TOKEN) return Promise.resolve(false);
+  // Always emit a socket event to show in the mock client receiver
+  if (io) {
+    io.emit("telegram_mock_message", { text, timestamp: new Date().toISOString() });
+  }
+
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.log(`[MOCK TELEGRAM] Mock send: ${text.replace(/<[^>]*>/g, '')}`);
+    return Promise.resolve(true);
+  }
   const currentChatIds = getTelegramChatIds();
-  if (currentChatIds.length === 0) return Promise.resolve(false);
+  if (currentChatIds.length === 0) {
+    console.log(`[MOCK TELEGRAM] Mock send (no chat ids): ${text.replace(/<[^>]*>/g, '')}`);
+    return Promise.resolve(true);
+  }
 
   console.log(`[SOS] Sending Telegram message to ${currentChatIds.length} individual contact(s)...`);
 
@@ -242,25 +253,14 @@ app.post("/api/esp32/data", (req, res) => {
     res.json({ ok: true });
 
     // 2. Perform heavy DSP & DB calculations in the background
+    const bpmImmediate = stabilizeBpm(calculateBPM(ir_array), fall_detected, temp);
+    const fallbackSpo2 = calculateSpO2(ir_array, red_array) || 98;
+
     (async () => {
-      if (Array.isArray(ecg_array)) {
-        ecgRollingBuffer = ecgRollingBuffer.concat(ecg_array);
-        // Keep last 10 seconds of data at 250 Hz (2500 samples)
-        if (ecgRollingBuffer.length > 2500) {
-          ecgRollingBuffer = ecgRollingBuffer.slice(-2500);
-        }
-      }
-
-      // Primary path — Python DSP (pass the rolling 10-second buffer)
       const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0, fall_detected, sample_rate, simulation_mode: simulationActive });
-
-      // Fallback to JS if Python unavailable
-      const ppgSampleRate = sample_rate / 10.0;
-      let bpm = dsp?.bpm ?? calculateBPM(ir_array, ppgSampleRate);
-      if (!dsp) {
-        bpm = stabilizeBpm(bpm, fall_detected, temp);
-      }
-      const spo2 = dsp?.spo2 ?? calculateSpO2(ir_array, red_array);
+      // Use DSP results if available, otherwise keep fallback
+      const finalBpm = dsp?.bpm ?? bpmImmediate;
+      const finalSpo2 = dsp?.spo2 ?? fallbackSpo2;
       const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
       const st_deviation_mv = dsp?.st_deviation_mv  ?? null;
       const breathing_rate  = dsp?.breathing_rate   ?? null;
@@ -269,13 +269,30 @@ app.post("/api/esp32/data", (req, res) => {
       const ai_health_score = dsp?.ai_health_score  ?? null;
       const clinical_verdict = dsp?.clinical_verdict ?? null;
 
-      dsp
-        ? console.log(`[DATA+DSP] bpm=${bpm} spo2=${spo2} hrv=${hrv_rmssd} st=${st_deviation_mv} score=${ai_health_score}`)
-        : console.warn(`[DATA-FALLBACK] Python DSP unreachable — bpm=${bpm} spo2=${spo2}`);
+      // Emit enriched vitals if DSP succeeded
+      if (dsp) {
+        io.emit("vitals", {
+          bpm: finalBpm,
+          spo2: finalSpo2,
+          temp,
+          fall_detected,
+          ecg_array: null,
+          timestamp: new Date().toISOString(),
+          hrv_rmssd,
+          st_deviation_mv,
+          breathing_rate,
+          stress_index,
+          r_peak_interval_ms: r_peak_interval,
+          ai_health_score,
+          clinical_verdict,
+          simulation_active: simulationActive,
+          simulation_type: simulationType,
+        });
+      }
 
-      accumulatedVitals.bpm.push(bpm);
+      accumulatedVitals.bpm.push(finalBpm);
       accumulatedVitals.temp.push(temp);
-      accumulatedVitals.spo2.push(spo2);
+      accumulatedVitals.spo2.push(finalSpo2);
       if (fall_detected) accumulatedVitals.fall_detected = true;
       if (Array.isArray(ecg_array)) accumulatedEcg = accumulatedEcg.concat(ecg_array);
 
@@ -344,34 +361,17 @@ app.post("/api/esp32/data", (req, res) => {
         lastEcgSaveTime = now;
       }
 
-      // Downsample the 250 Hz ecg_array to 25 Hz for frontend display
-      let ecg_downsampled = null;
-      if (Array.isArray(ecg_array)) {
-        ecg_downsampled = [];
-        for (let i = 0; i < ecg_array.length; i += 10) {
-          ecg_downsampled.push(ecg_array[i]);
-        }
-      }
-
-      io.emit("vitals", {
-        bpm, spo2, temp, fall_detected, ecg_array: ecg_downsampled, timestamp:ts,
-        hrv_rmssd, st_deviation_mv, breathing_rate, stress_index,
-        r_peak_interval_ms: r_peak_interval, ai_health_score,
-        clinical_verdict,
-        simulation_active: simulationActive,
-        simulation_type: simulationType,
-      });
-
-      if (fall_detected && TELEGRAM_BOT_TOKEN && now-lastTwilioTime >= 600000) {
+      if (fall_detected && now-lastTwilioTime >= 600000) {
         try {
-          const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n<b>FALL DETECTED</b>\n<b>BPM:</b> ${bpm}\n<b>Temp:</b> ${temp}°C\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track live location</a>`;
+          const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n<b>FALL DETECTED</b>\n<b>BPM:</b> ${finalBpm}\n<b>Temp:</b> ${temp}°C\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track live location</a>`;
           await sendTelegramMessage(msg);
           console.log("[SOS] Telegram alert sent");
+          io.emit("sos", { reason:"FALL DETECTED", bpm: finalBpm, temp, timestamp:ts });
           lastTwilioTime = now;
         } catch(e) { console.error("[SOS]", e); }
-        io.emit("sos", { reason:"FALL DETECTED", bpm, temp, timestamp:ts });
+        io.emit("sos", { reason:"FALL DETECTED", bpm: finalBpm, temp, timestamp:ts });
       }
-    })().catch(err => console.error("[ESP32 Async Error]:", err.message));
+    })().catch(err => console.error("[DSP Async Error]", err.message));
 
   } catch(err) {
     console.error("[ESP32] Error:", err.message);
@@ -385,8 +385,8 @@ app.post("/api/esp32/data", (req, res) => {
 app.post("/api/esp32/simulate-start", (req, res) => {
   try {
     const { type } = req.body;
-    if (!type || !mitBihSamples[type]) {
-      return res.status(400).json({ error: `Invalid type. Available: ${Object.keys(mitBihSamples).join(", ")}` });
+    if (!type || (!mitBihSamples[type] && type !== "fall")) {
+      return res.status(400).json({ error: `Invalid type. Available: ${Object.keys(mitBihSamples).join(", ")}, fall` });
     }
 
     // Stop any existing simulation
@@ -397,11 +397,11 @@ app.post("/api/esp32/simulate-start", (req, res) => {
 
     simulationActive = true;
     simulationType = type;
-    const sample = mitBihSamples[type];
+    const sample = type === "fall" ? mitBihSamples["normal"] : mitBihSamples[type];
     const ecgData = sample.ecg_array || [];
     const irData = sample.ir_array || [];
     const redData = sample.red_array || [];
-    const temp = sample.temp || 36.7;
+    const temp = type === "fall" ? 36.6 : (sample.temp || 36.7);
     const chunkSize = 125; // 125 samples = 0.5 seconds at 250 Hz
     const ppgChunkSize = 12; // ~0.5 seconds at 25 Hz
     let ecgOffset = 0;
@@ -432,7 +432,7 @@ app.post("/api/esp32/simulate-start", (req, res) => {
       // Inject into the existing ESP32 pipeline by making an internal HTTP call
       const payload = JSON.stringify({
         temp,
-        fall_detected: false,
+        fall_detected: type === "fall",
         ecg_array: ecgChunk,
         ir_array: irChunk,
         red_array: redChunk,

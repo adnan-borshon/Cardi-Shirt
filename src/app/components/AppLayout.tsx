@@ -4,6 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { HamburgerMenu } from "./HamburgerMenu";
 import { AIChat } from "./AIChat";
+import { TelegramMockCenter } from "./TelegramMockCenter";
 import { useTokens } from "./ThemeContext";
 import { MessageCircle, X } from "lucide-react";
 import { useGeolocationWatcher } from "./useBackend";
@@ -19,6 +20,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen w-full transition-colors duration-300" style={{ background: tk.pageBg, fontFamily: "Syne, sans-serif" }}>
+      <TelegramMockCenter />
       <HamburgerMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
       <Sidebar />
 

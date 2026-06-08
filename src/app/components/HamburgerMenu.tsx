@@ -7,6 +7,7 @@ import {
   Globe, User, ChevronRight, Flame
 } from "lucide-react";
 import { useTokens, useSharedLocalStorage } from "./ThemeContext";
+import { API_URL } from "./useBackend";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard", badge: { text: "", type: "dot-green" as const } },
@@ -142,10 +143,14 @@ export function HamburgerMenu({ open, onClose }: HamburgerMenuProps) {
                   {quickActions.map((a) => (
                     <button
                       key={a.label}
-                      onClick={() => {
+                      onClick={async () => {
                         if (a.label === "Call ambulance") {
                           if (window.confirm("Are you sure you want to call an ambulance? This will initiate an emergency dispatch.")) {
-                            alert("Calling nearest ambulance...");
+                            try {
+                              await fetch(API_URL + "/api/telegram/dispatch", { method: "POST" });
+                            } catch (e) {
+                              console.error(e);
+                            }
                           }
                         } else if (a.label === "Record ECG now") {
                           alert("Recording a 30-second 3-lead ECG. Please remain still.");

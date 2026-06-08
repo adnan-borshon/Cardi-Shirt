@@ -173,4 +173,31 @@ return{summaries,loading,error,refetch:fetchSummaries};
 export function useGeolocationWatcher(){useEffect(()=>{if(typeof window==="undefined"||!navigator.geolocation)return;const watchId=navigator.geolocation.watchPosition(async(pos)=>{const{latitude:lat,longitude:lng}=pos.coords;try{await fetch(`${API_URL}/api/location/update`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng})});}catch(e){console.error(e);}},e=>console.warn(e),{enableHighAccuracy:true,timeout:10000,maximumAge:0});return()=>{navigator.geolocation.clearWatch(watchId);};},[]);}
 export function useLiveLocation(){const[loc,setLoc]=useState<{lat:number;lng:number}|null>(null);useEffect(()=>{fetch(`${API_URL}/api/location/current`).then(r=>r.json()).then(d=>setLoc(d)).catch(e=>console.error(e));const s=getSocket();const handleLocationChange=(d:{lat:number;lng:number})=>setLoc(d);s.on("location_change",handleLocationChange);return()=>{s.off("location_change",handleLocationChange);};},[]);return loc;}
 
-export{API_URL};
+export interface TelegramMockMessage {
+  text: string;
+  timestamp: string;
+}
+
+export function useTelegramMockMessages() {
+  const s = getSocket();
+  const [messages, setMessages] = useState<TelegramMockMessage[]>([]);
+  const [newMsg, setNewMsg] = useState<TelegramMockMessage | null>(null);
+
+  useEffect(() => {
+    const handleMsg = (data: TelegramMockMessage) => {
+      setMessages(prev => [data, ...prev].slice(0, 50));
+      setNewMsg(data);
+    };
+    s.on("telegram_mock_message", handleMsg);
+    return () => {
+      s.off("telegram_mock_message", handleMsg);
+    };
+  }, [s]);
+
+  const clearMessages = useCallback(() => setMessages([]), []);
+  const dismissNewMsg = useCallback(() => setNewMsg(null), []);
+
+  return { messages, newMsg, clearMessages, dismissNewMsg };
+}
+
+export { API_URL };
