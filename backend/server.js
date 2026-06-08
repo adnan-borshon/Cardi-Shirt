@@ -17,7 +17,7 @@ async function callDSP(payload) {
   return new Promise((resolve) => {
     const body = JSON.stringify(payload);
     const req  = http.request(
-      { hostname:"localhost", port:5001, path:"/analyze", method:"POST",
+      { hostname:"127.0.0.1", port:5001, path:"/analyze", method:"POST",
         headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body)},
         timeout: 3000 },
       (res) => {
@@ -440,10 +440,12 @@ app.post("/api/esp32/simulate-start", (req, res) => {
       });
 
       const internalReq = http.request(
-        { hostname: "localhost", port: PORT, path: "/api/esp32/data", method: "POST",
+        { hostname: "127.0.0.1", port: PORT, path: "/api/esp32/data", method: "POST",
           headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
           timeout: 5000 },
-        () => {} // Ignore response
+        (res) => {
+          res.resume(); // Consume/resume response to free up the socket!
+        }
       );
       internalReq.on("error", (err) => console.error("[SIM] Internal post error:", err.message));
       internalReq.write(payload);
@@ -855,7 +857,7 @@ async function migrateLegacySessions() {
 async function runMigrationWhenReady() {
   const checkHealth = () => {
     return new Promise((resolve) => {
-      const req = http.get("http://localhost:5001/health", (res) => {
+      const req = http.get("http://127.0.0.1:5001/health", (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
         res.on("end", () => {
