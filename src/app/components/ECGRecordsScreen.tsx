@@ -127,6 +127,11 @@ export function ECGRecordsScreen() {
           _backendId: r.id,
           _aiSummary: r.ai_summary || "",
           _waveform: wf,
+          bpm: r.bpm,
+          hrv_rmssd: r.hrv_rmssd,
+          st_deviation_mv: r.st_deviation_mv,
+          breathing_rate: r.breathing_rate,
+          r_peak_interval_ms: r.r_peak_interval_ms,
         };
       })
       .filter(s => {
@@ -832,14 +837,54 @@ export function ECGRecordsScreen() {
               <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12, marginBottom: 8, display: "block" }}>CardiShirt Diagnostics</span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { label: "Avg HR", value: "76", unit: "BPM", comp: "Within normal limits" },
-                  { label: "Voltage Range", value: selectedSession.hrRange, unit: "", comp: "Good signal amplitude" },
-                  { label: "HRV (RMSSD)", value: "44", unit: "ms", comp: "+2ms vs baseline" },
-                  { label: "Rhythm Verdict", value: selectedSession.aiStatus === "alert" ? "Arrythmia" : "Normal", unit: "", comp: selectedSession.aiStatus === "alert" ? "Ectopic events noted" : "Normal sinus rhythm" },
-                  { label: "ST Segment", value: "+0.15", unit: "mV", comp: "Stable baseline" },
-                  { label: "T Wave", value: "Upright", unit: "", comp: "Proper repolarization" },
-                  { label: "R-Peak Interval", value: "832", unit: "ms", comp: "Consistent R-R range" },
-                  { label: "Breathing Rate", value: "15", unit: "BPM", comp: "Stable respirations" },
+                  {
+                    label: "Avg HR",
+                    value: selectedSession.bpm ? Math.round(selectedSession.bpm).toString() : "—",
+                    unit: "BPM",
+                    comp: selectedSession.bpm ? (selectedSession.bpm > 90 ? "Tachycardia detected" : selectedSession.bpm < 60 ? "Bradycardia detected" : "Within normal limits") : "—"
+                  },
+                  {
+                    label: "Voltage Range",
+                    value: selectedSession.hrRange,
+                    unit: "",
+                    comp: "Good signal amplitude"
+                  },
+                  {
+                    label: "HRV (RMSSD)",
+                    value: selectedSession.hrv_rmssd !== undefined && selectedSession.hrv_rmssd !== null ? Math.round(selectedSession.hrv_rmssd).toString() : "—",
+                    unit: "ms",
+                    comp: selectedSession.hrv_rmssd !== undefined && selectedSession.hrv_rmssd !== null ? (selectedSession.hrv_rmssd >= 40 ? "Good variability" : "Low variability") : "—"
+                  },
+                  {
+                    label: "Rhythm Verdict",
+                    value: selectedSession.aiStatus === "alert" ? "Arrhythmia" : selectedSession.aiStatus === "normal" ? "Normal" : "Pending",
+                    unit: "",
+                    comp: selectedSession.aiStatus === "alert" ? "Ectopic events noted" : selectedSession.aiStatus === "normal" ? "Normal sinus rhythm" : "Awaiting AI analysis"
+                  },
+                  {
+                    label: "ST Segment",
+                    value: selectedSession.st_deviation_mv !== undefined && selectedSession.st_deviation_mv !== null ? (selectedSession.st_deviation_mv >= 0 ? `+${selectedSession.st_deviation_mv.toFixed(2)}` : selectedSession.st_deviation_mv.toFixed(2)) : "—",
+                    unit: "mV",
+                    comp: selectedSession.st_deviation_mv !== undefined && selectedSession.st_deviation_mv !== null ? (selectedSession.st_deviation_mv < -0.05 || selectedSession.st_deviation_mv > 0.10 ? "Abnormal deviation" : "Stable baseline") : "—"
+                  },
+                  {
+                    label: "T Wave",
+                    value: selectedSession.st_deviation_mv !== undefined && selectedSession.st_deviation_mv !== null ? (selectedSession.st_deviation_mv < -0.05 ? "Inverted" : "Upright") : "Upright",
+                    unit: "",
+                    comp: selectedSession.st_deviation_mv !== undefined && selectedSession.st_deviation_mv !== null ? (selectedSession.st_deviation_mv < -0.05 ? "Possible ischemia" : "Proper repolarization") : "Proper repolarization"
+                  },
+                  {
+                    label: "R-Peak Interval",
+                    value: selectedSession.r_peak_interval_ms !== undefined && selectedSession.r_peak_interval_ms !== null ? Math.round(selectedSession.r_peak_interval_ms).toString() : "—",
+                    unit: "ms",
+                    comp: selectedSession.r_peak_interval_ms !== undefined && selectedSession.r_peak_interval_ms !== null ? "Consistent R-R range" : "—"
+                  },
+                  {
+                    label: "Breathing Rate",
+                    value: selectedSession.breathing_rate !== undefined && selectedSession.breathing_rate !== null ? Math.round(selectedSession.breathing_rate).toString() : "—",
+                    unit: "BPM",
+                    comp: selectedSession.breathing_rate !== undefined && selectedSession.breathing_rate !== null ? "Stable respirations" : "—"
+                  },
                 ].map((m) => (
                   <div key={m.label} className="p-2.5 rounded-lg border border-black/5 dark:border-white/5" style={{ background: tk.inputBg }}>
                     <span style={{ color: tk.textMuted, fontFamily: "Syne, sans-serif", fontSize: 10 }}>{m.label}</span>

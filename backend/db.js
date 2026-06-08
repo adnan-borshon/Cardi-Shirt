@@ -45,6 +45,13 @@ async function getDb() {
     timestamp TEXT DEFAULT(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
   )`);
 
+  // ECG sessions columns — safe migration
+  try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN bpm REAL"); } catch (e) {}
+  try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN hrv_rmssd REAL"); } catch (e) {}
+  try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN st_deviation_mv REAL"); } catch (e) {}
+  try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN breathing_rate REAL"); } catch (e) {}
+  try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN r_peak_interval_ms REAL"); } catch (e) {}
+
   _db.run(`CREATE TABLE IF NOT EXISTS daily_summaries(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     summary TEXT,

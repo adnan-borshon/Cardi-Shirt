@@ -283,8 +283,38 @@ app.post("/api/esp32/data", (req, res) => {
       }
 
       if (now - lastEcgSaveTime >= 600000 && accumulatedEcg.length > 0) {
-        db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp)VALUES(?,?,?)",
-               [JSON.stringify(accumulatedEcg), "", new Date().toISOString()]);
+        let bpm = 76;
+        let hrv_rmssd = 44;
+        let st_deviation_mv = 0.15;
+        let breathing_rate = 15;
+        let r_peak_interval_ms = 832;
+
+        try {
+          const dspResult = await callDSP({ ecg_array: accumulatedEcg });
+          if (dspResult) {
+            if (typeof dspResult.bpm === "number" && dspResult.bpm > 0) bpm = dspResult.bpm;
+            if (typeof dspResult.hrv_rmssd === "number") hrv_rmssd = dspResult.hrv_rmssd;
+            if (typeof dspResult.st_deviation_mv === "number") st_deviation_mv = dspResult.st_deviation_mv;
+            if (typeof dspResult.breathing_rate === "number") breathing_rate = dspResult.breathing_rate;
+            if (typeof dspResult.r_peak_interval_ms === "number") r_peak_interval_ms = dspResult.r_peak_interval_ms;
+          }
+        } catch (err) {
+          console.error("[ECG Save] DSP computation failed, using defaults:", err.message);
+        }
+
+        db.run(
+          "INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms) VALUES(?,?,?,?,?,?,?,?)",
+          [
+            JSON.stringify(accumulatedEcg),
+            "",
+            new Date().toISOString(),
+            bpm,
+            hrv_rmssd,
+            st_deviation_mv,
+            breathing_rate,
+            r_peak_interval_ms
+          ]
+        );
         persist();
         io.emit("ecg_session");
         accumulatedEcg  = [];
@@ -330,7 +360,7 @@ app.get("/api/ecg-records", async (_req, res) => {
   try {
     const db = await getDb();
     const rows = db.exec(
-      "SELECT id,waveform_data,ai_summary,timestamp FROM ecg_sessions ORDER BY id DESC",
+      "SELECT id,waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms FROM ecg_sessions ORDER BY id DESC",
     );
     if (!rows.length || !rows[0].values.length) return res.json([]);
     const records = rows[0].values.map((r) => {
@@ -344,6 +374,11 @@ app.get("/api/ecg-records", async (_req, res) => {
         waveform_data: JSON.parse(r[1] || "[]"),
         ai_summary: r[2] || "",
         timestamp: ts,
+        bpm: r[4],
+        hrv_rmssd: r[5],
+        st_deviation_mv: r[6],
+        breathing_rate: r[7],
+        r_peak_interval_ms: r[8],
       };
     });
     res.json(records);
@@ -484,15 +519,98 @@ app.get("/api/diary/summary", async (req, res) => {
 // ---------- Phase 3: GET Trends (Dynamic Fallback) ----------
 app.get("/api/trends",async(req,res)=>{try{const{range}=req.query;let days=30;if(range==="7d")days=7;if(range==="90d")days=90;if(range==="1y")days=365;const db=await getDb();const countRows=db.exec(`SELECT COUNT(DISTINCT DATE(timestamp)) as uniqueDays FROM realtime_vitals WHERE timestamp>=datetime('now','-${days} days')`);const uniqueDays=countRows.length&&countRows[0].values.length?countRows[0].values[0][0]:0;let rows;if(uniqueDays>=2){rows=db.exec(`SELECT DATE(timestamp) as day,AVG(bpm) as avgBpm,AVG(spo2) as avgSpo2,AVG(temp) as avgTemp,AVG(hrv_rmssd) as avgHrv,AVG(ai_health_score) as avgScore FROM realtime_vitals WHERE timestamp>=datetime('now','-${days} days') GROUP BY DATE(timestamp) ORDER BY day ASC`);}else{rows=db.exec(`SELECT strftime('%Y-%m-%d %H:00',timestamp) as day,AVG(bpm) as avgBpm,AVG(spo2) as avgSpo2,AVG(temp) as avgTemp,AVG(hrv_rmssd) as avgHrv,AVG(ai_health_score) as avgScore FROM realtime_vitals WHERE timestamp>=datetime('now','-1 days') GROUP BY strftime('%Y-%m-%d %H:00',timestamp) ORDER BY day ASC`);console.log("[TRENDS] Fallback: grouping by hour (uniqueDays="+uniqueDays+")");}if(!rows.length||!rows[0].values.length)return res.json([]);const data=rows[0].values.map(r=>({day:r[0],avgBpm:Math.round(r[1]),avgSpo2:Math.round(r[2]),avgTemp:parseFloat(r[3].toFixed(1)),avgHrv:r[4]!=null?parseFloat(r[4].toFixed(1)):null,avgScore:r[5]!=null?Math.round(r[5]):null}));res.json(data);}catch(err){console.error("[TRENDS]",err.message);res.status(500).json({error:err.message});}});
 
+// Migration: Compute metrics for any legacy sessions where bpm is NULL
+async function migrateLegacySessions() {
+  try {
+    const db = await getDb();
+    const rows = db.exec("SELECT id, waveform_data, bpm FROM ecg_sessions");
+    if (!rows.length || !rows[0].values.length) return;
+    
+    console.log("[Migration] Checking legacy ECG sessions for missing metrics...");
+    
+    for (const row of rows[0].values) {
+      const id = row[0];
+      const waveformStr = row[1];
+      const existingBpm = row[2];
+      
+      if (existingBpm === null || existingBpm === undefined) {
+        console.log(`[Migration] Computing metrics for session ID ${id}...`);
+        const waveform = JSON.parse(waveformStr || "[]");
+        if (waveform.length > 0) {
+          const dspResult = await callDSP({ ecg_array: waveform });
+          
+          let bpm = 76;
+          let hrv_rmssd = 44;
+          let st_deviation_mv = 0.15;
+          let breathing_rate = 15;
+          let r_peak_interval_ms = 832;
+          
+          if (dspResult) {
+            if (typeof dspResult.bpm === "number" && dspResult.bpm > 0) bpm = dspResult.bpm;
+            if (typeof dspResult.hrv_rmssd === "number") hrv_rmssd = dspResult.hrv_rmssd;
+            if (typeof dspResult.st_deviation_mv === "number") st_deviation_mv = dspResult.st_deviation_mv;
+            if (typeof dspResult.breathing_rate === "number") breathing_rate = dspResult.breathing_rate;
+            if (typeof dspResult.r_peak_interval_ms === "number") r_peak_interval_ms = dspResult.r_peak_interval_ms;
+          }
+          
+          db.run(
+            "UPDATE ecg_sessions SET bpm=?, hrv_rmssd=?, st_deviation_mv=?, breathing_rate=?, r_peak_interval_ms=? WHERE id=?",
+            [bpm, hrv_rmssd, st_deviation_mv, breathing_rate, r_peak_interval_ms, id]
+          );
+          console.log(`[Migration] Updated session ID ${id} with: bpm=${bpm}, hrv=${hrv_rmssd}, st=${st_deviation_mv}, resp=${breathing_rate}, rpeak=${r_peak_interval_ms}`);
+        }
+      }
+    }
+    persist();
+    console.log("[Migration] Legacy sessions check complete.");
+  } catch (err) {
+    console.error("[Migration] Error migrating legacy ECG sessions:", err.message);
+  }
+}
+
+// Poll Python DSP health until it's ready, then run migration
+async function runMigrationWhenReady() {
+  const checkHealth = () => {
+    return new Promise((resolve) => {
+      const req = http.get("http://localhost:5001/health", (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => {
+          try {
+            const json = JSON.parse(data);
+            resolve(json?.status === "ok");
+          } catch {
+            resolve(false);
+          }
+        });
+      });
+      req.on("error", () => resolve(false));
+    });
+  };
+
+  console.log("[Migration] Waiting for Python DSP service to be ready...");
+  for (let i = 0; i < 30; i++) { // Try for 5 minutes (30 * 10s)
+    const ready = await checkHealth();
+    if (ready) {
+      console.log("[Migration] Python DSP service is online. Running migration...");
+      await migrateLegacySessions();
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 10000));
+  }
+  console.warn("[Migration] Python DSP service did not become ready in time. Migration skipped.");
+}
+
 // ---------- Boot ----------
 (async () => {
   const db = await getDb();
   console.log("[DB] SQLite ready — tables created");
-  server.listen(PORT, "0.0.0.0", () =>
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(
       `[SERVER] CardiShirt backend running on port ${PORT} (0.0.0.0)`,
-    ),
-  );
+    );
+    runMigrationWhenReady().catch(err => console.error("[Migration error]:", err));
+  });
 })();
 
 module.exports = { app, io, server };

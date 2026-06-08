@@ -39,6 +39,11 @@ id:number;
 waveform_data:number[];
 ai_summary:string;
 timestamp:string;
+bpm?: number | null;
+hrv_rmssd?: number | null;
+st_deviation_mv?: number | null;
+breathing_rate?: number | null;
+r_peak_interval_ms?: number | null;
 }
 
 // Hook: real-time vitals via WebSocket
