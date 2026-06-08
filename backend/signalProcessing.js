@@ -5,7 +5,7 @@
  */
 let lastBpm = 0;
 
-function calculateBPM(irArray) {
+function calculateBPM(irArray, ppgSampleRate = 25) {
   if (!irArray || irArray.length < 5) return lastBpm || 0;
   const s = [];
   for (let i = 0; i < irArray.length; i++) {
@@ -25,7 +25,7 @@ function calculateBPM(irArray) {
   if (peaks.length < 2) return lastBpm || 0;
   const avg_d = peaks.reduce((s,p,i) => i ? s+(p-peaks[i-1]) : s, 0) / (peaks.length-1);
   if (!avg_d) return lastBpm || 0;
-  const bpm = Math.round((60 * 25) / avg_d);
+  const bpm = Math.round((60 * ppgSampleRate) / avg_d);
   if (bpm >= 40 && bpm <= 180) { lastBpm = bpm; return bpm; }
   return lastBpm || 0;
 }

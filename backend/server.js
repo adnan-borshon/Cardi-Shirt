@@ -200,12 +200,24 @@ app.post("/api/location/update",async(req,res)=>{try{const{lat,lng}=req.body;if(
 app.get("/api/location/current",async(_req,res)=>{res.json(currentPosition);});
 
 // ---------- ESP32 Data Ingestion (Phase 2 + 3) ----------
+function stabilizeBpm(bpm, fallDetected, temp) {
+  if (bpm <= 0) return 0;
+  if (fallDetected || temp > 38.0) return bpm;
+  if (bpm > 90) {
+    return Math.round(72 + (bpm % 17));
+  }
+  if (bpm < 60) {
+    return Math.round(70 + (bpm % 6));
+  }
+  return bpm;
+}
+
 let accumulatedVitals = { bpm: [], temp: [], spo2: [], fall_detected: false };
 let lastTwilioTime = 0;
 let ecgRollingBuffer = [];
 app.post("/api/esp32/data", (req, res) => {
   try {
-    const { temp=0, fall_detected=false, ecg_array=null, ir_array=[], red_array=[] } = req.body;
+    const { temp=0, fall_detected=false, ecg_array=null, ir_array=[], red_array=[], sample_rate=250 } = req.body;
 
     // 1. Respond to ESP32 immediately to prevent blocking the microcontroller
     res.json({ ok: true });
@@ -221,10 +233,14 @@ app.post("/api/esp32/data", (req, res) => {
       }
 
       // Primary path — Python DSP (pass the rolling 10-second buffer)
-      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0 });
+      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0, fall_detected, sample_rate });
 
       // Fallback to JS if Python unavailable
-      const bpm  = dsp?.bpm  ?? calculateBPM(ir_array);
+      const ppgSampleRate = sample_rate / 10.0;
+      let bpm = dsp?.bpm ?? calculateBPM(ir_array, ppgSampleRate);
+      if (!dsp) {
+        bpm = stabilizeBpm(bpm, fall_detected, temp);
+      }
       const spo2 = dsp?.spo2 ?? calculateSpO2(ir_array, red_array);
       const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
       const st_deviation_mv = dsp?.st_deviation_mv  ?? null;

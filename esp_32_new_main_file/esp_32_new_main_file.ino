@@ -53,7 +53,12 @@ long irTxBuffer[maxPpgSamples];
 long redTxBuffer[maxPpgSamples];
 float txTemp = 36.5;
 bool txFallFlag = false;
+volatile float txSampleRate = 250.0;
 volatile bool txReady = false;
+
+unsigned long batchStartTime = 0;
+float actualSampleRate = 250.0;
+
 
 void uploadTask(void * pvParameters) {
   for(;;) {
@@ -67,6 +72,7 @@ void uploadTask(void * pvParameters) {
         DynamicJsonDocument doc(16384);
         doc["temp"] = txTemp;
         doc["fall_detected"] = txFallFlag;
+        doc["sample_rate"] = txSampleRate;
 
         JsonArray ecg = doc.createNestedArray("ecg_array");
         JsonArray ir = doc.createNestedArray("ir_array");
@@ -198,6 +204,9 @@ void loop() {
     lastEcgReadTime = now;
 
     if (ecgSampleCount < maxEcgSamples) {
+      if (ecgSampleCount == 0) {
+        batchStartTime = millis();
+      }
       // 1. Read ECG
       ecgArray[ecgSampleCount] = analogRead(34);
 
@@ -283,6 +292,19 @@ void loop() {
       ecgSampleCount++;
       
     } else {
+      // Calculate dynamic actual sample rate
+      unsigned long elapsed = millis() - batchStartTime;
+      if (elapsed > 0) {
+        actualSampleRate = (maxEcgSamples * 1000.0) / elapsed;
+      } else {
+        actualSampleRate = 250.0;
+      }
+
+      // Limit to sensible physical bounds to prevent division by zero or extreme noise
+      if (actualSampleRate < 50.0 || actualSampleRate > 500.0) {
+        actualSampleRate = 250.0;
+      }
+
       // ---------- Handoff Data Packet to Upload Task ----------
       if (!txReady) {
         for (int i = 0; i < maxEcgSamples; i++) {
@@ -294,8 +316,13 @@ void loop() {
         }
         txTemp = currentTemperature;
         txFallFlag = fallFlag;
+        txSampleRate = actualSampleRate;
         txReady = true; // Signal upload task
-        Serial.println("\n[Main Loop] Packet handoff to Tx buffer succeeded.");
+        Serial.print("\n[Main Loop] Packet handoff succeeded. Sample Rate: ");
+        Serial.print(actualSampleRate);
+        Serial.print(" Hz (Elapsed: ");
+        Serial.print(elapsed);
+        Serial.println(" ms)");
       } else {
         Serial.println("\n[Main Loop] [WARN] Previous upload task still active. Skipping packet.");
       }

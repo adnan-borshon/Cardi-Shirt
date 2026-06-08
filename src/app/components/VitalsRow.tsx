@@ -33,6 +33,8 @@ export function VitalsRow() {
   const [stHistory, setStHistory] = useState<number[]>([]);
   const [rPeakHistory, setRPeakHistory] = useState<number[]>([]);
 
+  const lastProcessedTimestampRef = useRef<string>("");
+
   useEffect(() => {
     if (vitals) {
       lastActiveRef.current = Date.now();
@@ -52,7 +54,9 @@ export function VitalsRow() {
   const isActive = connected && isHardwareActive && vitals;
 
   useEffect(() => {
-    if (isActive && vitals) {
+    if (isActive && vitals && vitals.timestamp !== lastProcessedTimestampRef.current) {
+      lastProcessedTimestampRef.current = vitals.timestamp;
+
       const updateHistory = (
         val: number | null | undefined,
         setter: React.Dispatch<React.SetStateAction<number[]>>,
@@ -76,17 +80,18 @@ export function VitalsRow() {
       updateHistory(vitals.stress_index, setSiHistory);
       updateHistory(vitals.st_deviation_mv, setStHistory, true);
       updateHistory(vitals.r_peak_interval_ms, setRPeakHistory);
-    } else {
-      // Clear histories on disconnect
-      setBpmHistory([]);
-      setTempHistory([]);
-      setSpo2History([]);
-      setAiHistory([]);
-      setHrvHistory([]);
-      setBrHistory([]);
-      setSiHistory([]);
-      setStHistory([]);
-      setRPeakHistory([]);
+    } else if (!isActive) {
+      // Clear histories on disconnect safely to avoid infinite render loops
+      setBpmHistory((prev) => (prev.length > 0 ? [] : prev));
+      setTempHistory((prev) => (prev.length > 0 ? [] : prev));
+      setSpo2History((prev) => (prev.length > 0 ? [] : prev));
+      setAiHistory((prev) => (prev.length > 0 ? [] : prev));
+      setHrvHistory((prev) => (prev.length > 0 ? [] : prev));
+      setBrHistory((prev) => (prev.length > 0 ? [] : prev));
+      setSiHistory((prev) => (prev.length > 0 ? [] : prev));
+      setStHistory((prev) => (prev.length > 0 ? [] : prev));
+      setRPeakHistory((prev) => (prev.length > 0 ? [] : prev));
+      lastProcessedTimestampRef.current = "";
     }
   }, [vitals, isActive]);
 
@@ -121,6 +126,7 @@ export function VitalsRow() {
         accent: "#9AA0B8",
         trendLabel: "Offline",
         detail: fallbackDetail,
+        isCalibrating: false,
       };
     }
     if (historyLen === 0) {
@@ -132,6 +138,7 @@ export function VitalsRow() {
         accent: "#5B8AF0",
         trendLabel: "Calculating...",
         detail: "Processing raw signal...",
+        isCalibrating: true,
       };
     }
     const accentColor = typeof normalAccent === "function" ? normalAccent() : normalAccent;
@@ -143,6 +150,7 @@ export function VitalsRow() {
       accent: accentColor,
       trendLabel: normalTrendLabel,
       detail: normalDetail,
+      isCalibrating: false,
     };
   };
 
