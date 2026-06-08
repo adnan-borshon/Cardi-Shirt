@@ -20,7 +20,7 @@ import neurokit2 as nk
 
 app = Flask(__name__)
 
-ECG_SAMPLE_RATE = 250      # Hz — update if ESP32 firmware changes
+ECG_SAMPLE_RATE = 250      # Hz — set to 250 Hz for high fidelity DSP
 PPG_SAMPLE_RATE = 25       # Hz — MAX30100/MAX30102 default
 MS_PER_SAMPLE   = 1000.0 / ECG_SAMPLE_RATE   # 4.0 ms at 250 Hz
 
@@ -32,6 +32,8 @@ def bandpass_filter_ecg(signal, low=0.5, high=40.0, fs=ECG_SAMPLE_RATE, order=4)
     if len(signal) < 10:
         return signal
     nyq      = 0.5 * fs
+    if high >= nyq:
+        high = 0.8 * nyq
     low_n    = max(0.001, min(low  / nyq, 0.999))
     high_n   = max(0.001, min(high / nyq, 0.999))
     if low_n >= high_n:

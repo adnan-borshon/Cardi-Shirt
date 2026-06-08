@@ -73,7 +73,7 @@ export function ECGCanvas() {
   // Check hardware transmission status every 1 second
   useEffect(() => {
     const timer = setInterval(() => {
-      if (Date.now() - lastActiveRef.current > 4000) {
+      if (Date.now() - lastActiveRef.current > 8000) {
         setIsHardwareActive(false);
       }
     }, 1000);
@@ -165,8 +165,14 @@ export function ECGCanvas() {
         const amplitude = h * 0.35;
 
         for (let x = 0; x < w; x++) {
-          const sampleIdx = Math.floor(x / pixelsPerSample);
-          const rawVal = samples[sampleIdx] ?? 0;
+          const sampleFloat = x / pixelsPerSample;
+          const idx0 = Math.floor(sampleFloat);
+          const idx1 = Math.min(samples.length - 1, idx0 + 1);
+          const t = sampleFloat - idx0;
+
+          const val0 = samples[idx0] ?? 0;
+          const val1 = samples[idx1] ?? 0;
+          const rawVal = val0 + (val1 - val0) * t;
 
           let val = 0;
           if (range > 10) {
@@ -223,12 +229,10 @@ export function ECGCanvas() {
         const currentPointer = drawPointerRef.current;
         const lag = bufferSize - currentPointer;
 
-        // Adaptive step based on lag to ensure latency-free real-time rendering
-        let step = 4.17; // 250Hz @ 60FPS
-        if (lag > 600) step = 12.0;
-        else if (lag > 300) step = 7.0;
-        else if (lag < 60) step = 2.0;
-        else if (lag < 15) step = 0.5;
+        // Proportional feedback controller to adjust step rate dynamically
+        const targetLag = 50; // Keep target buffer delay around 2 seconds of data (50 samples at 25Hz)
+        let step = 0.4167 + (lag - targetLag) * 0.01; // Base step is 25Hz / 60fps = 0.4167
+        step = Math.max(0.08, Math.min(2.0, step));
 
         if (bufferSize > 0) {
           drawPointerRef.current = Math.min(bufferSize, drawPointerRef.current + step);

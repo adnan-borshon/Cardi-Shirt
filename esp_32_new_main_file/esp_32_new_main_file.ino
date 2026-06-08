@@ -3,8 +3,6 @@
 #include <ArduinoJson.h>
 #include <MAX30105.h>
 #include <Wire.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -17,16 +15,19 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature tempSensor(&oneWire);
 
 MAX30105 particleSensor;
-Adafruit_MPU6050 mpu;
+// We removed Adafruit_MPU6050 mpu; because we are reading it directly now
+const int MPU_ADDR = 0x68; // Address for the MPU6050
 
-const int maxSamples = 50;
-float ecgArray[maxSamples];
-long irArray[maxSamples];
-long redArray[maxSamples];
-int sampleCount = 0;
+const int maxEcgSamples = 500;
+const int maxPpgSamples = 50;
+float ecgArray[maxEcgSamples];
+long irArray[maxPpgSamples];
+long redArray[maxPpgSamples];
+int ecgSampleCount = 0;
+int ppgSampleCount = 0;
 
-unsigned long lastReadTime = 0;
-unsigned long readInterval = 40; // 25Hz sampling rate
+unsigned long lastEcgReadTime = 0;
+unsigned long ecgReadInterval = 4; // 250Hz sampling rate
 
 // Fall detection state variables
 bool freeFallDetected = false;
@@ -44,8 +45,62 @@ unsigned long lastTempRequestTime = 0;
 const unsigned long tempInterval = 10000; // Read temperature every 10s
 float currentTemperature = 36.5;
 
+// ---------- background upload task config ----------
+TaskHandle_t uploadTaskHandle = NULL;
+
+float ecgTxBuffer[maxEcgSamples];
+long irTxBuffer[maxPpgSamples];
+long redTxBuffer[maxPpgSamples];
+float txTemp = 36.5;
+bool txFallFlag = false;
+volatile bool txReady = false;
+
+void uploadTask(void * pvParameters) {
+  for(;;) {
+    if (txReady) {
+      Serial.println("\n[Upload Task] Sending Data Packets to Server...");
+      if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+        http.begin(serverUrl);
+        http.addHeader("Content-Type", "application/json");
+
+        DynamicJsonDocument doc(16384);
+        doc["temp"] = txTemp;
+        doc["fall_detected"] = txFallFlag;
+
+        JsonArray ecg = doc.createNestedArray("ecg_array");
+        JsonArray ir = doc.createNestedArray("ir_array");
+        JsonArray red = doc.createNestedArray("red_array");
+
+        for (int i = 0; i < maxEcgSamples; i++) {
+          ecg.add(ecgTxBuffer[i]);
+        }
+        for (int i = 0; i < maxPpgSamples; i++) {
+          ir.add(irTxBuffer[i]);
+          red.add(redTxBuffer[i]);
+        }
+
+        String payload;
+        serializeJson(doc, payload);
+        int resp = http.POST(payload);
+
+        Serial.print("[Upload Task] Payload size: ");
+        Serial.print(payload.length());
+        Serial.print(" | Server Response: ");
+        Serial.println(resp);
+
+        http.end();
+      } else {
+        Serial.println("[Upload Task] [ERROR] WiFi Disconnected! Skipping upload.");
+      }
+      txReady = false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+}
+
 void setup() {
-  Serial.begin(115200); // 115200 is much better for ESP32 and prevents serial blockages
+  Serial.begin(115200);
   delay(2000);
   Serial.println("\n=== ESP32 NEW MAIN FILE BOOTING ===");
 
@@ -54,16 +109,15 @@ void setup() {
 
   // ---------- Setup Shared I2C Bus ----------
   Serial.println("Initializing I2C Bus on Pins 21 (SDA) and 22 (SCL)...");
-  Wire.begin(21, 22); // Both sensors share I2C Pin 21 and Pin 22
+  Wire.begin(21, 22); 
   Wire.setClock(400000); // 400kHz fast I2C mode
-
   delay(500);
 
   // ---------- Temp Sensor Setup ----------
   Serial.println("Initializing Dallas Temperature Sensor...");
   tempSensor.begin();
-  tempSensor.setWaitForConversion(false); // Enable non-blocking temperature reads
-  tempSensor.requestTemperatures();       // Initial request
+  tempSensor.setWaitForConversion(false);
+  tempSensor.requestTemperatures();       
   Serial.println("Dallas Temp Sensor Initialized.");
 
   // ---------- MAX30102 Setup ----------
@@ -75,16 +129,18 @@ void setup() {
     maxReady = true;
     Serial.println("[SUCCESS] MAX30102 READY");
   }
-
   delay(500);
 
-  // ---------- MPU6050 Setup ----------
-  Serial.println("Starting MPU6050 on shared I2C bus...");
+  // ---------- MPU6050 Setup (Direct Raw Mode) ----------
+  Serial.println("Starting MPU6050 on shared I2C bus (Raw Mode)...");
   for (int i = 0; i < 5; i++) {
-    if (mpu.begin(0x68, &Wire)) { // Shared Wire I2C bus on 21/22
-      mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-      mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-      mpu.setFilterBandwidth(MPU6050_BAND_21_HZ); // Filter noise
+    // Talk to the power management register to wake it up
+    Wire.beginTransmission(MPU_ADDR);
+    Wire.write(0x6B); 
+    Wire.write(0);    // 0 wakes it up
+    byte error = Wire.endTransmission(true);
+    
+    if (error == 0) { 
       mpuReady = true;
       Serial.println("[SUCCESS] MPU6050 READY");
       break;
@@ -108,6 +164,19 @@ void setup() {
   }
   Serial.println("\n[SUCCESS] WiFi Connected. IP address: ");
   Serial.println(WiFi.localIP());
+
+  // ---------- Launch Background Upload Task (Core 0) ----------
+  xTaskCreatePinnedToCore(
+    uploadTask,
+    "UploadTask",
+    8192,
+    NULL,
+    1,
+    &uploadTaskHandle,
+    0
+  );
+  Serial.println("[FreeRTOS] Background Upload Task started on Core 0");
+
   Serial.println("=== SETUP COMPLETE ===\n");
 }
 
@@ -117,125 +186,123 @@ void loop() {
   // ---------- Non-blocking Temperature Handler ----------
   if (now - lastTempRequestTime >= tempInterval) {
     currentTemperature = tempSensor.getTempCByIndex(0);
-    tempSensor.requestTemperatures(); // Request next reading asynchronously
+    tempSensor.requestTemperatures(); 
     lastTempRequestTime = now;
     Serial.print("[DEBUG] Temp read: ");
     Serial.print(currentTemperature);
     Serial.println(" C");
   }
 
-  // ---------- Main Sensor Sampling (25Hz) ----------
-  if (now - lastReadTime > readInterval) {
-    lastReadTime = now;
+  // ---------- Main Sensor Sampling (250Hz for ECG, 25Hz for PPG/MPU6050) ----------
+  if (now - lastEcgReadTime >= ecgReadInterval) {
+    lastEcgReadTime = now;
 
-    if (sampleCount < maxSamples) {
+    if (ecgSampleCount < maxEcgSamples) {
       // 1. Read ECG
-      ecgArray[sampleCount] = analogRead(34);
+      ecgArray[ecgSampleCount] = analogRead(34);
 
-      // 2. Read MAX30102
-      if (maxReady) {
-        irArray[sampleCount] = particleSensor.getIR();
-        redArray[sampleCount] = particleSensor.getRed();
-      } else {
-        irArray[sampleCount] = 0;
-        redArray[sampleCount] = 0;
-      }
-
-      // 3. Read MPU6050 & Run Fall Logic
-      if (mpuReady) {
-        sensors_event_t a, g, temp;
-        mpu.getEvent(&a, &g, &temp);
-
-        float accelMag = sqrt(sq(a.acceleration.x) + sq(a.acceleration.y) + sq(a.acceleration.z));
-
-        // --- Debug output of accelerometer values (highly helpful) ---
-        Serial.print("AX: "); Serial.print(a.acceleration.x);
-        Serial.print(" | AY: "); Serial.print(a.acceleration.y);
-        Serial.print(" | AZ: "); Serial.print(a.acceleration.z);
-        Serial.print(" | Mag: "); Serial.println(accelMag);
-
-        // --- Multi-Phase Fall Detection ---
-        // Phase 1: Free Fall (Low-G)
-        if (!freeFallDetected && accelMag < 5.88) { // 0.6g
-          freeFallDetected = true;
-          fallStartTime = now;
-          Serial.println("[DEBUG] Phase 1 Triggered: Free Fall detected (Low-G). Waiting for impact...");
+      // 2. Read PPG & MPU6050 (at 25 Hz, i.e., every 10th ECG sample)
+      if (ecgSampleCount % 10 == 0 && ppgSampleCount < maxPpgSamples) {
+        // Read MAX30102
+        if (maxReady) {
+          irArray[ppgSampleCount] = particleSensor.getIR();
+          redArray[ppgSampleCount] = particleSensor.getRed();
+        } else {
+          irArray[ppgSampleCount] = 0;
+          redArray[ppgSampleCount] = 0;
         }
 
-        // Reset Free Fall if no impact happens within 500ms
-        if (freeFallDetected && (now - fallStartTime > 500)) {
-          freeFallDetected = false;
-          Serial.println("[DEBUG] Phase 1 Reset: Timeout (no impact within 500ms).");
-        }
+        // Read MPU6050 & Run Fall Logic
+        if (mpuReady) {
+          // Go to the memory spot where acceleration data starts
+          Wire.beginTransmission(MPU_ADDR);
+          Wire.write(0x3B);
+          Wire.endTransmission(false);
+          // Ask for 6 bytes of data (X, Y, and Z)
+          Wire.requestFrom(MPU_ADDR, 6, true);
+          
+          if (Wire.available() == 6) {
+            int16_t rawX = Wire.read() << 8 | Wire.read();
+            int16_t rawY = Wire.read() << 8 | Wire.read();
+            int16_t rawZ = Wire.read() << 8 | Wire.read();
 
-        // Phase 2: Impact (High-G)
-        if (freeFallDetected && accelMag > 27.44) { // 2.8g
-          impactDetected = true;
-          freeFallDetected = false;
-          impactTime = now;
-          Serial.println("[DEBUG] Phase 2 Triggered: Impact detected (High-G). Validating posture...");
-        }
+            // Convert raw numbers to meters per second squared (m/s^2)
+            // 16384.0 is the scale factor for the sensor. 9.81 is Earth's gravity.
+            float ax = (rawX / 16384.0) * 9.81;
+            float ay = (rawY / 16384.0) * 9.81;
+            float az = (rawZ / 16384.0) * 9.81;
 
-        // Phase 3: Posture & Inactivity Validation (Evaluated 2s after impact)
-        if (impactDetected && (now - impactTime >= 2000)) {
-          float tiltAngle = acos(a.acceleration.z / accelMag) * 180.0 / PI;
-          bool isStationary = abs(accelMag - 9.81) < 1.96; // Within 0.2g margin
-          bool isHorizontal = tiltAngle > 60.0;            // Torso is tilted horizontally
+            // Now we run your exact fall detection math
+            float accelMag = sqrt(sq(ax) + sq(ay) + sq(az));
 
-          Serial.print("[DEBUG] Validation: Tilt Angle = ");
-          Serial.print(tiltAngle);
-          Serial.print(" deg (Horizontal threshold > 60) | Stationary = ");
-          Serial.println(isStationary ? "TRUE" : "FALSE");
+            // Phase 1: Free Fall (Low-G)
+            if (!freeFallDetected && accelMag < 5.88) { // 0.6g
+              freeFallDetected = true;
+              fallStartTime = now;
+              Serial.println("[DEBUG] Phase 1 Triggered: Free Fall detected (Low-G). Waiting for impact...");
+            }
 
-          if (isHorizontal && isStationary) {
-            fallFlag = true; // Fall confirmed
-            Serial.println("[FALL] ALERT! Fall Confirmed. Posture is horizontal and user is inactive.");
-          } else {
-            Serial.println("[DEBUG] Alert Canceled: User is either active or upright.");
+            // Reset Free Fall if no impact happens within 500ms
+            if (freeFallDetected && (now - fallStartTime > 500)) {
+              freeFallDetected = false;
+              Serial.println("[DEBUG] Phase 1 Reset: Timeout (no impact within 500ms).");
+            }
+
+            // Phase 2: Impact (High-G)
+            if (freeFallDetected && accelMag > 27.44) { // 2.8g
+              impactDetected = true;
+              freeFallDetected = false;
+              impactTime = now;
+              Serial.println("[DEBUG] Phase 2 Triggered: Impact detected (High-G). Validating posture...");
+            }
+
+            // Phase 3: Posture & Inactivity Validation (Evaluated 2s after impact)
+            if (impactDetected && (now - impactTime >= 2000)) {
+              // Calculate tilt using the converted Z-axis (az)
+              float tiltAngle = acos(az / accelMag) * 180.0 / PI;
+              bool isStationary = abs(accelMag - 9.81) < 1.96; // Within 0.2g margin
+              bool isHorizontal = tiltAngle > 60.0; // Torso is tilted horizontally
+
+              Serial.print("[DEBUG] Validation: Tilt Angle = ");
+              Serial.print(tiltAngle);
+              Serial.print(" deg (Horizontal threshold > 60) | Stationary = ");
+              Serial.println(isStationary ? "TRUE" : "FALSE");
+
+              if (isHorizontal && isStationary) {
+                fallFlag = true;
+                Serial.println("[FALL] ALERT! Fall Confirmed. Posture is horizontal and user is inactive.");
+              } else {
+                Serial.println("[DEBUG] Alert Canceled: User is either active or upright.");
+              }
+              impactDetected = false;
+            }
           }
-          impactDetected = false;
         }
+        ppgSampleCount++;
       }
-      sampleCount++;
+      ecgSampleCount++;
+      
     } else {
-      // ---------- Transmit Data Packet to Backend ----------
-      Serial.println("\nSending Data Packets to Server...");
-      if (WiFi.status() == WL_CONNECTED) {
-        HTTPClient http;
-        http.begin(serverUrl);
-        http.addHeader("Content-Type", "application/json");
-
-        // Reduced Json document size from 8192 to 3072 bytes (safe & efficient)
-        StaticJsonDocument<3072> doc;
-        doc["temp"] = currentTemperature;
-        doc["fall_detected"] = fallFlag;
-
-        JsonArray ecg = doc.createNestedArray("ecg_array");
-        JsonArray ir = doc.createNestedArray("ir_array");
-        JsonArray red = doc.createNestedArray("red_array");
-
-        for (int i = 0; i < maxSamples; i++) {
-          ecg.add(ecgArray[i]);
-          ir.add(irArray[i]);
-          red.add(redArray[i]);
+      // ---------- Handoff Data Packet to Upload Task ----------
+      if (!txReady) {
+        for (int i = 0; i < maxEcgSamples; i++) {
+          ecgTxBuffer[i] = ecgArray[i];
         }
-
-        String payload;
-        serializeJson(doc, payload);
-        int resp = http.POST(payload);
-
-        Serial.print("Payload size: ");
-        Serial.print(payload.length());
-        Serial.print(" | Server Response: ");
-        Serial.println(resp);
-
-        http.end();
+        for (int i = 0; i < maxPpgSamples; i++) {
+          irTxBuffer[i] = irArray[i];
+          redTxBuffer[i] = redArray[i];
+        }
+        txTemp = currentTemperature;
+        txFallFlag = fallFlag;
+        txReady = true; // Signal upload task
+        Serial.println("\n[Main Loop] Packet handoff to Tx buffer succeeded.");
       } else {
-        Serial.println("[ERROR] WiFi Disconnected! Skipping upload.");
+        Serial.println("\n[Main Loop] [WARN] Previous upload task still active. Skipping packet.");
       }
 
       // Reset buffers and variables
-      sampleCount = 0;
+      ecgSampleCount = 0;
+      ppgSampleCount = 0;
       fallFlag = false;
       Serial.println();
     }

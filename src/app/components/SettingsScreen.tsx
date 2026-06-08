@@ -1792,7 +1792,6 @@ function DisplaySection() {
   const [themeMode, setThemeMode] = useLocalStorage("cs_theme_mode", theme === "dark" ? "Dark" : "Light");
   const [textSize, setTextSize] = useLocalStorage("cs_text_size", "Standard");
   const [showFamily, setShowFamily] = useLocalStorage("cs_show_family", true);
-  const [showMeds, setShowMeds] = useLocalStorage("cs_show_meds", true);
   const [showCheckin, setShowCheckin] = useLocalStorage("cs_show_checkin", true);
   const [showBaseline, setShowBaseline] = useLocalStorage("cs_show_baseline", true);
   const [aiProactive, setAiProactive] = useLocalStorage("cs_ai_proactive", "Normal");
@@ -1845,7 +1844,6 @@ function DisplaySection() {
 
       <SectionCard title="Dashboard Preferences" icon={<Monitor size={18} />} iconColor={c.secondary}>
         <SettingRow label="Show family circle widget"><Toggle on={showFamily} onToggle={() => setShowFamily(!showFamily)} /></SettingRow>
-        <SettingRow label="Show medication log"><Toggle on={showMeds} onToggle={() => setShowMeds(!showMeds)} /></SettingRow>
         <SettingRow label="Show daily check-in card" desc="Disabling removes the morning check-in ritual entirely"><Toggle on={showCheckin} onToggle={() => setShowCheckin(!showCheckin)} /></SettingRow>
         <SettingRow label="ECG baseline band" desc="Show personalized baseline band on the ECG canvas"><Toggle on={showBaseline} onToggle={() => setShowBaseline(!showBaseline)} /></SettingRow>
         <SettingRow label="AI proactive messages" desc="How often the AI initiates messages in the chat">

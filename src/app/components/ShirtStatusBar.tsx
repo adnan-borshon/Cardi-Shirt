@@ -26,7 +26,7 @@ export function ShirtStatusBar() {
   // Hardware watchdog timer
   useEffect(() => {
     const timer = setInterval(() => {
-      if (Date.now() - lastActiveRef.current > 4000) {
+      if (Date.now() - lastActiveRef.current > 8000) {
         setIsHardwareActive(false);
       }
     }, 1000);

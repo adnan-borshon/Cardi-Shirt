@@ -60,23 +60,139 @@ if (process.env.GEMINI_API_KEY) {
   console.log("[AI] No Gemini API key — AI summaries will use fallback text");
 }
 
-// ---------- Twilio setup ----------
-let twilioClient = null;
-const TWILIO_FROM = process.env.TWILIO_PHONE_FROM;
-const EMERGENCY_TO = process.env.EMERGENCY_PHONE_TO;
-if (process.env.TWILIO_ACCOUNT_SID) {
-  twilioClient = require("twilio")(
-    process.env.TWILIO_ACCOUNT_SID,
-    process.env.TWILIO_AUTH_TOKEN,
-  );
-  console.log("[SOS] Twilio client ready");
-} else {
-  console.log("[SOS] No Twilio credentials — SOS SMS disabled");
+// ---------- Telegram setup ----------
+const https = require("https");
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+function getTelegramChatIds() {
+  const ids = [];
+  if (process.env.TELEGRAM_CHAT_IDS) {
+    process.env.TELEGRAM_CHAT_IDS.split(",").forEach(id => {
+      const trimmed = id.trim();
+      if (trimmed) ids.push(trimmed);
+    });
+  }
+  // Fallback to TELEGRAM_CHAT_ID if TELEGRAM_CHAT_IDS is not provided
+  if (ids.length === 0 && process.env.TELEGRAM_CHAT_ID) {
+    const trimmed = process.env.TELEGRAM_CHAT_ID.trim();
+    if (trimmed) ids.push(trimmed);
+  }
+  return ids;
 }
+
+const chatIds = getTelegramChatIds();
+if (TELEGRAM_BOT_TOKEN && chatIds.length > 0) {
+  console.log(`[SOS] Telegram Bot ready. Configured with ${chatIds.length} individual contact(s)`);
+} else {
+  console.log("[SOS] No Telegram credentials — SOS Telegram alerts disabled");
+}
+
+function sendTelegramMessage(text) {
+  if (!TELEGRAM_BOT_TOKEN) return Promise.resolve(false);
+  const currentChatIds = getTelegramChatIds();
+  if (currentChatIds.length === 0) return Promise.resolve(false);
+
+  console.log(`[SOS] Sending Telegram message to ${currentChatIds.length} individual contact(s)...`);
+
+  const sendPromises = currentChatIds.map(chatId => {
+    return new Promise((resolve) => {
+      const data = JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" });
+      const options = {
+        hostname: "api.telegram.org",
+        port: 443,
+        path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) }
+      };
+      
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", chunk => body += chunk);
+        res.on("end", () => {
+          if (res.statusCode === 200) {
+            console.log(`[SOS] Sent Telegram message successfully to user: ${chatId}`);
+            resolve(true);
+          } else {
+            console.error(`[SOS] Telegram API error for user ${chatId}: Status ${res.statusCode}, Body: ${body}`);
+            resolve(false);
+          }
+        });
+      });
+      
+      req.on("error", (err) => {
+        console.error(`[SOS] Network error sending Telegram message to user ${chatId}:`, err.message);
+        resolve(false);
+      });
+      
+      req.write(data);
+      req.end();
+    });
+  });
+
+  return Promise.all(sendPromises).then(results => results.some(res => res === true));
+}
+
+// Helper: Registry tool that prints Chat IDs to the console when family members message the bot
+let lastSeenUpdateId = 0;
+function pollTelegramUpdates() {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  setInterval(() => {
+    const options = {
+      hostname: "api.telegram.org",
+      port: 443,
+      path: `/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${lastSeenUpdateId + 1}`,
+      method: "GET"
+    };
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.ok && json.result) {
+            json.result.forEach(update => {
+              lastSeenUpdateId = Math.max(lastSeenUpdateId, update.update_id);
+              if (update.message && update.message.chat) {
+                const chat = update.message.chat;
+                const from = update.message.from;
+                console.log(`\x1b[36m[Telegram Register Helper] NEW CHAT ID DETECTED!\x1b[0m\nName: ${from.first_name || ""} ${from.last_name || ""} | Username: @${from.username || "none"}\n👉 Chat ID to copy into .env: \x1b[1m${chat.id}\x1b[0m`);
+              }
+            });
+          }
+        } catch(e) {}
+      });
+    });
+    req.on("error", () => {});
+    req.end();
+  }, 10000); // Check for new messages every 10 seconds
+}
+pollTelegramUpdates();
 
 // ---------- Health check ----------
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+// ---------- Telegram Manual Actions ----------
+app.post("/api/telegram/call", async (req, res) => {
+  try {
+    const { targetName } = req.body;
+    const msg = `☎️ <b>URGENT CALL BACK REQUESTED</b>\n\nPatient is requesting an immediate call back from <b>${targetName || 'a family member'}</b>.\nPlease call them ASAP!`;
+    const success = await sendTelegramMessage(msg);
+    res.json({ ok: success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/telegram/dispatch", async (req, res) => {
+  try {
+    const msg = `🚑 <b>CRITICAL EMERGENCY DISPATCH</b>\n\nManual emergency dispatch has been triggered from the dashboard.\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Patient Location</a>`;
+    const success = await sendTelegramMessage(msg);
+    res.json({ ok: success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------- Geolocation Endpoints (Phase 1) ----------
@@ -86,87 +202,110 @@ app.get("/api/location/current",async(_req,res)=>{res.json(currentPosition);});
 // ---------- ESP32 Data Ingestion (Phase 2 + 3) ----------
 let accumulatedVitals = { bpm: [], temp: [], spo2: [], fall_detected: false };
 let lastTwilioTime = 0;
-app.post("/api/esp32/data", async (req, res) => {
+let ecgRollingBuffer = [];
+app.post("/api/esp32/data", (req, res) => {
   try {
     const { temp=0, fall_detected=false, ecg_array=null, ir_array=[], red_array=[] } = req.body;
 
-    // Primary path — Python DSP
-    const dsp = await callDSP({ ecg_array: ecg_array||[], ir_array, red_array, temp, current_bpm:0 });
+    // 1. Respond to ESP32 immediately to prevent blocking the microcontroller
+    res.json({ ok: true });
 
-    // Fallback to JS if Python unavailable
-    const bpm  = dsp?.bpm  ?? calculateBPM(ir_array);
-    const spo2 = dsp?.spo2 ?? calculateSpO2(ir_array, red_array);
-    const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
-    const st_deviation_mv = dsp?.st_deviation_mv  ?? null;
-    const breathing_rate  = dsp?.breathing_rate   ?? null;
-    const stress_index    = dsp?.stress_index     ?? null;
-    const r_peak_interval = dsp?.r_peak_interval_ms ?? null;
-    const ai_health_score = dsp?.ai_health_score  ?? null;
+    // 2. Perform heavy DSP & DB calculations in the background
+    (async () => {
+      if (Array.isArray(ecg_array)) {
+        ecgRollingBuffer = ecgRollingBuffer.concat(ecg_array);
+        // Keep last 10 seconds of data at 250 Hz (2500 samples)
+        if (ecgRollingBuffer.length > 2500) {
+          ecgRollingBuffer = ecgRollingBuffer.slice(-2500);
+        }
+      }
 
-    dsp
-      ? console.log(`[DATA+DSP] bpm=${bpm} spo2=${spo2} hrv=${hrv_rmssd} st=${st_deviation_mv} score=${ai_health_score}`)
-      : console.warn(`[DATA-FALLBACK] Python DSP unreachable — bpm=${bpm} spo2=${spo2}`);
+      // Primary path — Python DSP (pass the rolling 10-second buffer)
+      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0 });
 
-    accumulatedVitals.bpm.push(bpm);
-    accumulatedVitals.temp.push(temp);
-    accumulatedVitals.spo2.push(spo2);
-    if (fall_detected) accumulatedVitals.fall_detected = true;
-    if (Array.isArray(ecg_array)) accumulatedEcg = accumulatedEcg.concat(ecg_array);
+      // Fallback to JS if Python unavailable
+      const bpm  = dsp?.bpm  ?? calculateBPM(ir_array);
+      const spo2 = dsp?.spo2 ?? calculateSpO2(ir_array, red_array);
+      const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
+      const st_deviation_mv = dsp?.st_deviation_mv  ?? null;
+      const breathing_rate  = dsp?.breathing_rate   ?? null;
+      const stress_index    = dsp?.stress_index     ?? null;
+      const r_peak_interval = dsp?.r_peak_interval_ms ?? null;
+      const ai_health_score = dsp?.ai_health_score  ?? null;
 
-    const db = await getDb();
-    const ts  = new Date().toISOString();
-    const now = Date.now();
+      dsp
+        ? console.log(`[DATA+DSP] bpm=${bpm} spo2=${spo2} hrv=${hrv_rmssd} st=${st_deviation_mv} score=${ai_health_score}`)
+        : console.warn(`[DATA-FALLBACK] Python DSP unreachable — bpm=${bpm} spo2=${spo2}`);
 
-    if (now - lastInsertTime >= 120000) {
-      const avgBpm  = accumulatedVitals.bpm.reduce((a,b)=>a+b,0)  / accumulatedVitals.bpm.length  || 0;
-      const avgTemp = accumulatedVitals.temp.reduce((a,b)=>a+b,0) / accumulatedVitals.temp.length || 0;
-      const avgSpo2 = accumulatedVitals.spo2.reduce((a,b)=>a+b,0) / accumulatedVitals.spo2.length || 0;
+      accumulatedVitals.bpm.push(bpm);
+      accumulatedVitals.temp.push(temp);
+      accumulatedVitals.spo2.push(spo2);
+      if (fall_detected) accumulatedVitals.fall_detected = true;
+      if (Array.isArray(ecg_array)) accumulatedEcg = accumulatedEcg.concat(ecg_array);
 
-      db.run(
-        `INSERT INTO realtime_vitals
-           (bpm,temp,spo2,fall_detected,timestamp,
-            hrv_rmssd,st_deviation_mv,breathing_rate,stress_index,ai_health_score)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [Math.round(avgBpm), parseFloat(avgTemp.toFixed(1)), Math.round(avgSpo2),
-         accumulatedVitals.fall_detected?1:0, ts,
-         hrv_rmssd, st_deviation_mv, breathing_rate, stress_index, ai_health_score]
-      );
-      persist();
-      accumulatedVitals = { bpm:[], temp:[], spo2:[], fall_detected:false };
-      lastInsertTime = now;
-    }
+      const db = await getDb();
+      const ts  = new Date().toISOString();
+      const now = Date.now();
 
-    if (now - lastEcgSaveTime >= 600000 && accumulatedEcg.length > 0) {
-      db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp)VALUES(?,?,?)",
-             [JSON.stringify(accumulatedEcg), "", new Date().toISOString()]);
-      persist();
-      io.emit("ecg_session");
-      accumulatedEcg  = [];
-      lastEcgSaveTime = now;
-    }
+      if (now - lastInsertTime >= 120000) {
+        const avgBpm  = accumulatedVitals.bpm.reduce((a,b)=>a+b,0)  / accumulatedVitals.bpm.length  || 0;
+        const avgTemp = accumulatedVitals.temp.reduce((a,b)=>a+b,0) / accumulatedVitals.temp.length || 0;
+        const avgSpo2 = accumulatedVitals.spo2.reduce((a,b)=>a+b,0) / accumulatedVitals.spo2.length || 0;
 
-    io.emit("vitals", {
-      bpm, spo2, temp, fall_detected, ecg_array, timestamp:ts,
-      hrv_rmssd, st_deviation_mv, breathing_rate, stress_index,
-      r_peak_interval_ms: r_peak_interval, ai_health_score,
-    });
+        db.run(
+          `INSERT INTO realtime_vitals
+             (bpm,temp,spo2,fall_detected,timestamp,
+              hrv_rmssd,st_deviation_mv,breathing_rate,stress_index,ai_health_score)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [Math.round(avgBpm), parseFloat(avgTemp.toFixed(1)), Math.round(avgSpo2),
+           accumulatedVitals.fall_detected?1:0, ts,
+           hrv_rmssd, st_deviation_mv, breathing_rate, stress_index, ai_health_score]
+        );
+        persist();
+        accumulatedVitals = { bpm:[], temp:[], spo2:[], fall_detected:false };
+        lastInsertTime = now;
+      }
 
-    if (fall_detected && twilioClient && now-lastTwilioTime >= 600000) {
-      try {
-        await twilioClient.messages.create({
-          body: `🚨 CARDISHIRT SOS 🚨\nFALL DETECTED\nBPM: ${bpm} | Temp: ${temp}°C\nTrack live location: https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}`,
-          from: process.env.TWILIO_PHONE_FROM, to: process.env.EMERGENCY_PHONE_TO,
-        });
-        console.log("[SOS] SMS sent");
-        lastTwilioTime = now;
-      } catch(e) { console.error("[SOS]", e); }
-      io.emit("sos", { reason:"FALL DETECTED", bpm, temp, timestamp:ts });
-    }
+      if (now - lastEcgSaveTime >= 600000 && accumulatedEcg.length > 0) {
+        db.run("INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp)VALUES(?,?,?)",
+               [JSON.stringify(accumulatedEcg), "", new Date().toISOString()]);
+        persist();
+        io.emit("ecg_session");
+        accumulatedEcg  = [];
+        lastEcgSaveTime = now;
+      }
 
-    res.json({ ok:true });
+      // Downsample the 250 Hz ecg_array to 25 Hz for frontend display
+      let ecg_downsampled = null;
+      if (Array.isArray(ecg_array)) {
+        ecg_downsampled = [];
+        for (let i = 0; i < ecg_array.length; i += 10) {
+          ecg_downsampled.push(ecg_array[i]);
+        }
+      }
+
+      io.emit("vitals", {
+        bpm, spo2, temp, fall_detected, ecg_array: ecg_downsampled, timestamp:ts,
+        hrv_rmssd, st_deviation_mv, breathing_rate, stress_index,
+        r_peak_interval_ms: r_peak_interval, ai_health_score,
+      });
+
+      if (fall_detected && TELEGRAM_BOT_TOKEN && now-lastTwilioTime >= 600000) {
+        try {
+          const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n<b>FALL DETECTED</b>\n<b>BPM:</b> ${bpm}\n<b>Temp:</b> ${temp}°C\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track live location</a>`;
+          await sendTelegramMessage(msg);
+          console.log("[SOS] Telegram alert sent");
+          lastTwilioTime = now;
+        } catch(e) { console.error("[SOS]", e); }
+        io.emit("sos", { reason:"FALL DETECTED", bpm, temp, timestamp:ts });
+      }
+    })().catch(err => console.error("[ESP32 Async Error]:", err.message));
+
   } catch(err) {
     console.error("[ESP32] Error:", err.message);
-    res.status(500).json({ ok:false, error:err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ ok:false, error:err.message });
+    }
   }
 });
 

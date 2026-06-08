@@ -5,7 +5,6 @@ import {VitalsRow} from "../components/VitalsRow";
 import {AISummaryCard} from "../components/AISummaryCard";
 import {MapPanel} from "../components/MapPanel";
 import {FamilyCircle} from "../components/FamilyCircle";
-import {MedicationLog} from "../components/MedicationLog";
 import {useLiveVitals} from "../components/useBackend";
 import {AlertTriangle,X} from "lucide-react";
 
@@ -32,7 +31,6 @@ return(
 <AISummaryCard/>
 <MapPanel/>
 <FamilyCircle/>
-<MedicationLog/>
 </div>
 </div>
 );
