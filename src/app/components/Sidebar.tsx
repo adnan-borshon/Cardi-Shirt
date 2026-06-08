@@ -5,7 +5,7 @@ import {
   Signal, BatteryMedium, ChevronLeft, ChevronRight, Palette
 } from "lucide-react";
 import { useTheme, useTokens, useSharedLocalStorage } from "./ThemeContext";
-import { useLiveVitals } from "./useBackend";
+import { useLiveVitals, API_URL } from "./useBackend";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -31,6 +31,24 @@ export function Sidebar({}: SidebarProps) {
   const [lastName] = useSharedLocalStorage("cs_last_name", "Uddin");
   const [avatarInitials] = useSharedLocalStorage("cs_avatar_initials", "AU");
   const [avatarBgColor] = useSharedLocalStorage("cs_avatar_bgcolor", "#5B8AF0");
+
+  const triggerTelegramAlert = async (endpoint: string, label: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/telegram/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetName: "Family Circle" })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        alert(`Telegram Bot: ${label} alert sent successfully!`);
+      } else {
+        alert(`Telegram Bot Error: Failed to send ${label}.\nReason: ${data.error || "Unknown error"}`);
+      }
+    } catch (e: any) {
+      alert(`Telegram Bot Network Error:\n${e.message}`);
+    }
+  };
 
   return (
     <aside
@@ -114,6 +132,31 @@ export function Sidebar({}: SidebarProps) {
       </div>
 
 
+
+      {/* Telegram Mockup Buttons */}
+      {!collapsed && (
+        <div className="px-3 py-3 flex flex-col gap-1.5" style={{ borderTop: `0.5px solid ${tk.cardBorder}` }}>
+          <div className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color: tk.textMuted }}>
+            Telegram Mockup
+          </div>
+          <div className="flex gap-1.5">
+            <button 
+              onClick={() => triggerTelegramAlert("dispatch", "Emergency SOS")}
+              className="flex-1 py-1.5 rounded text-[11px] font-bold text-white transition-all cursor-pointer active:scale-95 text-center"
+              style={{ background: "#E8304A" }}
+            >
+              ⚡ Send SOS
+            </button>
+            <button 
+              onClick={() => triggerTelegramAlert("call", "Call Request")}
+              className="flex-1 py-1.5 rounded text-[11px] font-bold text-white transition-all cursor-pointer active:scale-95 text-center"
+              style={{ background: "#229ED9" }}
+            >
+              ☎️ Call Req
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Patient */}
       <div className="px-3 py-3 flex items-center gap-3 relative cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ borderTop: `0.5px solid ${tk.cardBorder}` }} onClick={() => setProfileModalOpen(!profileModalOpen)}>

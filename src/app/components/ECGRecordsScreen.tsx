@@ -183,6 +183,178 @@ export function ECGRecordsScreen() {
   const offsetRef = useRef(0);
   const animRef = useRef(0);
 
+  const mockSessions = useMemo(() => {
+    return [
+      {
+        id: "mock-s1",
+        dateGroup: "Today",
+        date: "3 Apr 2026",
+        time: "3:42 PM",
+        type: "alert",
+        duration: "Continuous • 4h 22m",
+        hrRange: "68–94 BPM",
+        aiStatus: "alert",
+        aiStatusText: "Anomaly",
+        _backendId: 0,
+        _waveform: [],
+        bpm: 81,
+        hrv_rmssd: 34,
+        st_deviation_mv: 0.12,
+        breathing_rate: 18,
+        r_peak_interval_ms: 740,
+        clinical_verdict: {
+          condition: "Sinus Tachycardia with Premature Ventricular Contractions (PVCs)",
+          severity: "warning",
+          findings: [
+            "Heart rate elevated at 81 BPM",
+            "Wide QRS complexes observed in Lead II",
+            "Ectopic beats detected, consistent with PVCs",
+            "No ST segment deviation noted"
+          ]
+        },
+        _aiSummary: `### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** Sinus Tachycardia with frequent Premature Ventricular Contractions (PVCs).\n* **Rate:** Heart rate averages 81 BPM with transient spikes up to 94 BPM during PVC runs.\n\n### 🔍 Key Diagnostic Observations\n* Wide, distorted QRS complexes occurring prematurely, followed by a compensatory pause.\n* T-wave inversion in Lead III during episodes, resolving afterward.\n\n### 🩺 Clinical Guidance\n* Recommend 24-hour Holter monitoring to quantify PVC burden.\n* Avoid stimulants like caffeine or stress triggers.`
+      },
+      {
+        id: "mock-s2",
+        dateGroup: "Today",
+        date: "3 Apr 2026",
+        time: "9:15 AM",
+        type: "manual",
+        duration: "Manual • 32s",
+        hrRange: "72–78 BPM",
+        aiStatus: "normal",
+        aiStatusText: "Normal",
+        _backendId: 0,
+        _waveform: [],
+        bpm: 75,
+        hrv_rmssd: 44,
+        st_deviation_mv: 0.02,
+        breathing_rate: 15,
+        r_peak_interval_ms: 800,
+        clinical_verdict: {
+          condition: "Normal Sinus Rhythm",
+          severity: "normal",
+          findings: [
+            "Heart rate stable at 75 BPM",
+            "Normal P-QRS-T morphology",
+            "No arrhythmias or conduction delays detected"
+          ]
+        },
+        _aiSummary: `### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** Regular Normal Sinus Rhythm.\n* **Rate:** Stable heart rate at 75 BPM with healthy respiratory sinus arrhythmia.\n\n### 🔍 Key Diagnostic Observations\n* Normal PR interval (160ms) and QRS duration (88ms).\n* ST segments are iso-electric with upright T waves across all leads.\n\n### 🩺 Clinical Guidance\n* Patient shows excellent cardiac stability. Continue standard monitoring.`
+      },
+      {
+        id: "mock-s3",
+        dateGroup: "Yesterday",
+        date: "2 Apr 2026",
+        time: "11:30 PM",
+        type: "continuous",
+        duration: "Continuous • 8h 42m",
+        hrRange: "54–72 BPM",
+        aiStatus: "normal",
+        aiStatusText: "Normal",
+        _backendId: 0,
+        _waveform: [],
+        bpm: 62,
+        hrv_rmssd: 48,
+        st_deviation_mv: 0.01,
+        breathing_rate: 12,
+        r_peak_interval_ms: 967,
+        clinical_verdict: {
+          condition: "Normal Sinus Rhythm (Sleeping)",
+          severity: "normal",
+          findings: [
+            "Healthy sleep bradycardia (62 BPM average)",
+            "High heart rate variability (RMSSD 48 ms)",
+            "ST baseline is stable"
+          ]
+        },
+        _aiSummary: `### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** Normal Sinus Rhythm showing physiological sleep bradycardia.\n* **Rate:** Ranging from 54 to 72 BPM (mean 62 BPM), typical for restorative sleep.\n\n### 🔍 Key Diagnostic Observations\n* High vagal tone reflected in elevated HRV (RMSSD 48 ms).\n* Stable baseline with zero ectopic activity.\n\n### 🩺 Clinical Guidance\n* Restful sleep patterns with expected physiological cardiac deceleration.`
+      },
+      {
+        id: "mock-s4",
+        dateGroup: "Yesterday",
+        date: "2 Apr 2026",
+        time: "2:00 PM",
+        type: "doctor",
+        duration: "Doctor requested • 30s",
+        hrRange: "70–76 BPM",
+        aiStatus: "normal",
+        aiStatusText: "Normal",
+        _backendId: 0,
+        _waveform: [],
+        bpm: 73,
+        hrv_rmssd: 42,
+        st_deviation_mv: 0.03,
+        breathing_rate: 16,
+        r_peak_interval_ms: 821,
+        clinical_verdict: {
+          condition: "Normal Sinus Rhythm",
+          severity: "normal",
+          findings: [
+            "Requested by clinician for routine check",
+            "Stable parameters, no deviations from baseline"
+          ]
+        },
+        _aiSummary: `### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** Normal Sinus Rhythm.\n* **Rate:** Heart rate stable at 73 BPM.\n\n### 🔍 Key Diagnostic Observations\n* Clear and clean signal morphology. Normal conduction pathways.\n\n### 🩺 Clinical Guidance\n* No abnormalities detected. Routine snapshot shared successfully.`
+      },
+      {
+        id: "mock-s5",
+        dateGroup: "Monday 31 March",
+        date: "31 Mar 2026",
+        time: "9:15 AM",
+        type: "manual",
+        duration: "Manual • 30s",
+        hrRange: "66–74 BPM",
+        aiStatus: "normal",
+        aiStatusText: "Normal",
+        _backendId: 0,
+        _waveform: [],
+        bpm: 70,
+        hrv_rmssd: 41,
+        st_deviation_mv: 0.02,
+        breathing_rate: 15,
+        r_peak_interval_ms: 857,
+        clinical_verdict: {
+          condition: "Normal Sinus Rhythm",
+          severity: "normal",
+          findings: [
+            "Manual capture, stable baseline at 70 BPM"
+          ]
+        },
+        _aiSummary: `### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** Normal Sinus Rhythm.\n* **Rate:** 70 BPM average.\n\n### 🔍 Key Diagnostic Observations\n* Stable baseline. No signs of ischemia or arrhythmia.\n\n### 🩺 Clinical Guidance\n* Patient reported no active symptoms. Recording normal.`
+      },
+      {
+        id: "mock-s6",
+        dateGroup: "Monday 31 March",
+        date: "31 Mar 2026",
+        time: "3:22 AM",
+        type: "alert",
+        duration: "Alert capture • 2m 14s",
+        hrRange: "88–112 BPM",
+        aiStatus: "alert",
+        aiStatusText: "Alert",
+        _backendId: 0,
+        _waveform: [],
+        bpm: 98,
+        hrv_rmssd: 12,
+        st_deviation_mv: 0.28,
+        breathing_rate: 22,
+        r_peak_interval_ms: 612,
+        clinical_verdict: {
+          condition: "Sinus Tachycardia with Significant ST-Segment Elevation",
+          severity: "critical",
+          findings: [
+            "ST-Elevation of +0.28 mV exceeds critical threshold",
+            "Sinus tachycardia at 98 BPM",
+            "Very low heart rate variability (RMSSD 12 ms)",
+            "Consistent with acute myocardial ischemia / STEMI"
+          ]
+        },
+        _aiSummary: `### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** Sinus Tachycardia with marked ST-Elevation.\n* **Rate:** Heart rate averages 98 BPM with rapid onset.\n\n### 🔍 Key Diagnostic Observations\n* Significant ST segment elevation of +0.28 mV in Lead II.\n* Low HRV indicates high sympathetic activation/physiological strain.\n\n### 🩺 Clinical Guidance\n* **CRITICAL ALERT:** Potential acute ischemia. Immediate medical evaluation/emergency check recommended.\n* Dispatched alert to configured family contacts.`
+      }
+    ];
+  }, []);
+
   // Group database sessions and build parameters
   const backendSessions = useMemo(() => {
     return backendRecords
@@ -205,7 +377,7 @@ export function ECGRecordsScreen() {
           dateGroup: d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }),
           date: d.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" }),
           time: d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-          type: "manual",
+          type: "manual" as const,
           duration: `${durationStr}`,
           hrRange: `${minV.toFixed(1)}–${maxV.toFixed(1)} mV`,
           aiStatus,
@@ -220,7 +392,15 @@ export function ECGRecordsScreen() {
           r_peak_interval_ms: r.r_peak_interval_ms,
           clinical_verdict: r.clinical_verdict,
         };
-      })
+      });
+  }, [backendRecords]);
+
+  const allSessions = useMemo(() => {
+    return [...backendSessions, ...mockSessions];
+  }, [backendSessions, mockSessions]);
+
+  const filteredSessions = useMemo(() => {
+    return allSessions
       .filter(s => {
         // Search filter
         const matchesSearch = s.date.toLowerCase().includes(searchQuery.toLowerCase()) || s.time.toLowerCase().includes(searchQuery.toLowerCase());
@@ -228,24 +408,24 @@ export function ECGRecordsScreen() {
 
         // Chip filter
         if (activeFilter === "All") return true;
-        if (activeFilter === "Flagged") return s.aiStatus === "alert";
+        if (activeFilter === "Flagged") return s.aiStatus === "alert" || s.aiStatus === "anomaly";
         if (activeFilter === "Normal") return s.aiStatus === "normal";
         if (activeFilter === "Manual") return s.type === "manual";
         return true;
       });
-  }, [backendRecords, searchQuery, activeFilter]);
+  }, [allSessions, searchQuery, activeFilter]);
 
   // Set default active session
   useEffect(() => {
-    if (backendSessions.length > 0 && !activeSession) {
-      setActiveSession(backendSessions[0]);
+    if (filteredSessions.length > 0 && !activeSession) {
+      setActiveSession(filteredSessions[0]);
     }
-  }, [backendSessions, activeSession]);
+  }, [filteredSessions, activeSession]);
 
   const selectedSession = useMemo(() => {
-    if (!activeSession) return backendSessions[0] || null;
-    return backendSessions.find(s => s.id === activeSession.id) || activeSession;
-  }, [activeSession, backendSessions]);
+    if (!activeSession) return filteredSessions[0] || null;
+    return filteredSessions.find(s => s.id === activeSession.id) || activeSession;
+  }, [activeSession, filteredSessions]);
 
   // Handle AI analysis request
   const handleAnalyze = async (recordId: number) => {
@@ -827,13 +1007,13 @@ export function ECGRecordsScreen() {
             </div>
           )}
 
-          {!backendLoading && backendSessions.length === 0 && (
+          {!backendLoading && filteredSessions.length === 0 && (
             <div className="text-center py-10 text-xs font-mono text-gray-400">
               No matching records found.
             </div>
           )}
 
-          {backendSessions.map((s) => (
+          {filteredSessions.map((s) => (
             <button
               key={s.id}
               onClick={() => {
@@ -849,7 +1029,7 @@ export function ECGRecordsScreen() {
               <div className="flex items-start gap-2">
                 <div
                   className="w-[3px] rounded-full self-stretch flex-shrink-0 mt-1"
-                  style={{ background: statusColors[s.aiStatus as keyof typeof statusColors], minHeight: 36 }}
+                  style={{ background: statusColors[s.aiStatus as keyof typeof statusColors] || "#C2C8D6", minHeight: 36 }}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
@@ -857,8 +1037,8 @@ export function ECGRecordsScreen() {
                     <span
                       className="px-1.5 py-0.5 rounded-full"
                       style={{
-                        background: `${statusColors[s.aiStatus as keyof typeof statusColors]}15`,
-                        color: statusColors[s.aiStatus as keyof typeof statusColors],
+                        background: `${statusColors[s.aiStatus as keyof typeof statusColors] || "#C2C8D6"}15`,
+                        color: statusColors[s.aiStatus as keyof typeof statusColors] || "#C2C8D6",
                         fontFamily: "DM Mono, monospace",
                         fontSize: 9
                       }}

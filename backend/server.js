@@ -107,20 +107,9 @@ if (TELEGRAM_BOT_TOKEN && chatIds.length > 0) {
 }
 
 function sendTelegramMessage(text) {
-  // Always emit a socket event to show in the mock client receiver
-  if (io) {
-    io.emit("telegram_mock_message", { text, timestamp: new Date().toISOString() });
-  }
-
-  if (!TELEGRAM_BOT_TOKEN) {
-    console.log(`[MOCK TELEGRAM] Mock send: ${text.replace(/<[^>]*>/g, '')}`);
-    return Promise.resolve(true);
-  }
+  if (!TELEGRAM_BOT_TOKEN) return Promise.resolve({ ok: false, error: "TELEGRAM_BOT_TOKEN is missing in .env file" });
   const currentChatIds = getTelegramChatIds();
-  if (currentChatIds.length === 0) {
-    console.log(`[MOCK TELEGRAM] Mock send (no chat ids): ${text.replace(/<[^>]*>/g, '')}`);
-    return Promise.resolve(true);
-  }
+  if (currentChatIds.length === 0) return Promise.resolve({ ok: false, error: "No chat IDs configured in .env file" });
 
   console.log(`[SOS] Sending Telegram message to ${currentChatIds.length} individual contact(s)...`);
 
@@ -132,7 +121,8 @@ function sendTelegramMessage(text) {
         port: 443,
         path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
         method: "POST",
-        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) }
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+        timeout: 5000 // 5 seconds timeout
       };
       
       const req = https.request(options, (res) => {
@@ -141,17 +131,28 @@ function sendTelegramMessage(text) {
         res.on("end", () => {
           if (res.statusCode === 200) {
             console.log(`[SOS] Sent Telegram message successfully to user: ${chatId}`);
-            resolve(true);
+            resolve({ ok: true, chatId });
           } else {
-            console.error(`[SOS] Telegram API error for user ${chatId}: Status ${res.statusCode}, Body: ${body}`);
-            resolve(false);
+            let errorMsg = `API Error (Status ${res.statusCode})`;
+            try {
+              const parsed = JSON.parse(body);
+              if (parsed.description) errorMsg = parsed.description;
+            } catch(e) {}
+            console.error(`[SOS] Telegram API error for user ${chatId}: ${errorMsg}`);
+            resolve({ ok: false, error: errorMsg, chatId });
           }
         });
       });
       
+      req.on("timeout", () => {
+        console.error(`[SOS] Timeout sending Telegram message to user ${chatId}`);
+        req.destroy();
+        resolve({ ok: false, error: "Connection Timeout (Firewall blocked?)" });
+      });
+
       req.on("error", (err) => {
         console.error(`[SOS] Network error sending Telegram message to user ${chatId}:`, err.message);
-        resolve(false);
+        resolve({ ok: false, error: err.message, chatId });
       });
       
       req.write(data);
@@ -159,7 +160,14 @@ function sendTelegramMessage(text) {
     });
   });
 
-  return Promise.all(sendPromises).then(results => results.some(res => res === true));
+  return Promise.all(sendPromises).then(results => {
+    const success = results.find(r => r.ok === true);
+    if (success) {
+      return { ok: true };
+    } else {
+      return { ok: false, error: results[0]?.error || "Unknown error" };
+    }
+  });
 }
 
 // Helper: Registry tool that prints Chat IDs to the console when family members message the bot
@@ -208,20 +216,20 @@ app.post("/api/telegram/call", async (req, res) => {
   try {
     const { targetName } = req.body;
     const msg = `☎️ <b>URGENT CALL BACK REQUESTED</b>\n\nPatient is requesting an immediate call back from <b>${targetName || 'a family member'}</b>.\nPlease call them ASAP!`;
-    const success = await sendTelegramMessage(msg);
-    res.json({ ok: success });
+    const result = await sendTelegramMessage(msg);
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 app.post("/api/telegram/dispatch", async (req, res) => {
   try {
     const msg = `🚑 <b>CRITICAL EMERGENCY DISPATCH</b>\n\nManual emergency dispatch has been triggered from the dashboard.\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Patient Location</a>`;
-    const success = await sendTelegramMessage(msg);
-    res.json({ ok: success });
+    const result = await sendTelegramMessage(msg);
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -248,6 +256,7 @@ let ecgRollingBuffer = [];
 app.post("/api/esp32/data", (req, res) => {
   try {
     const { temp=0, fall_detected=false, ecg_array=null, ir_array=[], red_array=[], sample_rate=250 } = req.body;
+    console.log(`[ESP32 Ingestion] Received packet: ECG samples = ${ecg_array?.length || 0} (first 5: ${ecg_array ? ecg_array.slice(0, 5).join(", ") : "N/A"}), IR samples = ${ir_array?.length || 0}, Temp = ${temp}°C`);
 
     // 1. Respond to ESP32 immediately to prevent blocking the microcontroller
     res.json({ ok: true });
@@ -257,10 +266,18 @@ app.post("/api/esp32/data", (req, res) => {
     const fallbackSpo2 = calculateSpO2(ir_array, red_array) || 98;
 
     (async () => {
-      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0, fall_detected, sample_rate, simulation_mode: simulationActive });
+      if (Array.isArray(ecg_array)) {
+        ecgRollingBuffer = ecgRollingBuffer.concat(ecg_array);
+        const maxSamples = sample_rate * 10; // 10 seconds of rolling window
+        if (ecgRollingBuffer.length > maxSamples) {
+          ecgRollingBuffer = ecgRollingBuffer.slice(ecgRollingBuffer.length - maxSamples);
+        }
+      }
+
+      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm: bpmImmediate, fall_detected, sample_rate, simulation_mode: simulationActive });
       // Use DSP results if available, otherwise keep fallback
-      const finalBpm = dsp?.bpm ?? bpmImmediate;
-      const finalSpo2 = dsp?.spo2 ?? fallbackSpo2;
+      const finalBpm = dsp?.bpm || bpmImmediate;
+      const finalSpo2 = dsp?.spo2 || fallbackSpo2;
       const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
       const st_deviation_mv = dsp?.st_deviation_mv  ?? null;
       const breathing_rate  = dsp?.breathing_rate   ?? null;
@@ -269,6 +286,8 @@ app.post("/api/esp32/data", (req, res) => {
       const ai_health_score = dsp?.ai_health_score  ?? null;
       const clinical_verdict = dsp?.clinical_verdict ?? null;
 
+      console.log(`[DSP] Received from Python -> BPM: ${finalBpm}, SpO2: ${finalSpo2}%, HRV: ${hrv_rmssd || "N/A"}ms, ST Dev: ${st_deviation_mv || "N/A"}mV, Health Score: ${ai_health_score || "N/A"}`);
+
       // Emit enriched vitals if DSP succeeded
       if (dsp) {
         io.emit("vitals", {
@@ -276,7 +295,7 @@ app.post("/api/esp32/data", (req, res) => {
           spo2: finalSpo2,
           temp,
           fall_detected,
-          ecg_array: null,
+          ecg_array: ecg_array,
           timestamp: new Date().toISOString(),
           hrv_rmssd,
           st_deviation_mv,
@@ -362,14 +381,15 @@ app.post("/api/esp32/data", (req, res) => {
       }
 
       if (fall_detected && now-lastTwilioTime >= 600000) {
-        try {
-          const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n<b>FALL DETECTED</b>\n<b>BPM:</b> ${finalBpm}\n<b>Temp:</b> ${temp}°C\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track live location</a>`;
-          await sendTelegramMessage(msg);
-          console.log("[SOS] Telegram alert sent");
-          io.emit("sos", { reason:"FALL DETECTED", bpm: finalBpm, temp, timestamp:ts });
-          lastTwilioTime = now;
-        } catch(e) { console.error("[SOS]", e); }
+        if (TELEGRAM_BOT_TOKEN) {
+          try {
+            const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n<b>FALL DETECTED</b>\n<b>BPM:</b> ${finalBpm}\n<b>Temp:</b> ${temp}°C\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track live location</a>`;
+            await sendTelegramMessage(msg);
+            console.log("[SOS] Telegram alert sent");
+          } catch(e) { console.error("[SOS] Telegram fail:", e); }
+        }
         io.emit("sos", { reason:"FALL DETECTED", bpm: finalBpm, temp, timestamp:ts });
+        lastTwilioTime = now;
       }
     })().catch(err => console.error("[DSP Async Error]", err.message));
 
@@ -385,8 +405,8 @@ app.post("/api/esp32/data", (req, res) => {
 app.post("/api/esp32/simulate-start", (req, res) => {
   try {
     const { type } = req.body;
-    if (!type || (!mitBihSamples[type] && type !== "fall")) {
-      return res.status(400).json({ error: `Invalid type. Available: ${Object.keys(mitBihSamples).join(", ")}, fall` });
+    if (!type || !mitBihSamples[type]) {
+      return res.status(400).json({ error: `Invalid type. Available: ${Object.keys(mitBihSamples).join(", ")}` });
     }
 
     // Stop any existing simulation
@@ -397,11 +417,11 @@ app.post("/api/esp32/simulate-start", (req, res) => {
 
     simulationActive = true;
     simulationType = type;
-    const sample = type === "fall" ? mitBihSamples["normal"] : mitBihSamples[type];
+    const sample = mitBihSamples[type];
     const ecgData = sample.ecg_array || [];
     const irData = sample.ir_array || [];
     const redData = sample.red_array || [];
-    const temp = type === "fall" ? 36.6 : (sample.temp || 36.7);
+    const temp = sample.temp || 36.7;
     const chunkSize = 125; // 125 samples = 0.5 seconds at 250 Hz
     const ppgChunkSize = 12; // ~0.5 seconds at 25 Hz
     let ecgOffset = 0;
@@ -432,7 +452,7 @@ app.post("/api/esp32/simulate-start", (req, res) => {
       // Inject into the existing ESP32 pipeline by making an internal HTTP call
       const payload = JSON.stringify({
         temp,
-        fall_detected: type === "fall",
+        fall_detected: false,
         ecg_array: ecgChunk,
         ir_array: irChunk,
         red_array: redChunk,

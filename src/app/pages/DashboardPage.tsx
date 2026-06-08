@@ -1,13 +1,13 @@
-import {ShirtStatusBar} from "../components/ShirtStatusBar";
-import {DailyCheckIn} from "../components/DailyCheckIn";
-import {ECGCanvas} from "../components/ECGCanvas";
-import {VitalsRow} from "../components/VitalsRow";
-import {AISummaryCard} from "../components/AISummaryCard";
+import { ShirtStatusBar } from "../components/ShirtStatusBar";
+import { DailyCheckIn } from "../components/DailyCheckIn";
+import { ECGCanvas } from "../components/ECGCanvas";
+import { VitalsRow } from "../components/VitalsRow";
+import { AISummaryCard } from "../components/AISummaryCard";
 
-import {MapPanel} from "../components/MapPanel";
-import {FamilyCircle} from "../components/FamilyCircle";
-import {useLiveVitals} from "../components/useBackend";
-import {AlertTriangle,X} from "lucide-react";
+import { MapPanel } from "../components/MapPanel";
+import { FamilyCircle } from "../components/FamilyCircle";
+import { useLiveVitals } from "../components/useBackend";
+import { AlertTriangle, X } from "lucide-react";
 
 export function DashboardPage(){
 const{sos,dismissSos}=useLiveVitals();

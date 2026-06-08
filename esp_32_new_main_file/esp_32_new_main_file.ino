@@ -26,8 +26,8 @@ long redArray[maxPpgSamples];
 int ecgSampleCount = 0;
 int ppgSampleCount = 0;
 
-unsigned long lastEcgReadTime = 0;
-unsigned long ecgReadInterval = 4; // 250Hz sampling rate
+unsigned long lastEcgReadTime = 0; // in microseconds
+unsigned long ecgReadInterval = 4000; // 250Hz sampling rate in microseconds
 
 // Fall detection state variables
 bool freeFallDetected = false;
@@ -82,17 +82,17 @@ void uploadTask(void * pvParameters) {
         
         payload += ",\"ecg_array\":[";
         for (int i = 0; i < maxEcgSamples; i++) {
-          payload += String(ecgTxBuffer[i]);
+          payload += ecgTxBuffer[i];
           if (i < maxEcgSamples - 1) payload += ",";
         }
         payload += "],\"ir_array\":[";
         for (int i = 0; i < maxPpgSamples; i++) {
-          payload += String(irTxBuffer[i]);
+          payload += irTxBuffer[i];
           if (i < maxPpgSamples - 1) payload += ",";
         }
         payload += "],\"red_array\":[";
         for (int i = 0; i < maxPpgSamples; i++) {
-          payload += String(redTxBuffer[i]);
+          payload += redTxBuffer[i];
           if (i < maxPpgSamples - 1) payload += ",";
         }
         payload += "]}";
@@ -174,6 +174,7 @@ void setup() {
   Serial.print("Connecting to WiFi SSID: ");
   Serial.println(ssid);
   WiFi.begin(ssid, pass);
+  WiFi.setTxPower(WIFI_POWER_15dBm); // Reduce WiFi TX power to prevent brownouts/disconnects on USB power
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -194,24 +195,26 @@ void setup() {
   Serial.println("[FreeRTOS] Background Upload Task started on Core 0");
 
   Serial.println("=== SETUP COMPLETE ===\n");
+  lastEcgReadTime = micros();
 }
 
 void loop() {
-  unsigned long now = millis();
+  unsigned long nowMs = millis();
+  unsigned long nowUs = micros();
 
   // ---------- Non-blocking Temperature Handler ----------
-  if (now - lastTempRequestTime >= tempInterval) {
+  if (nowMs - lastTempRequestTime >= tempInterval) {
     currentTemperature = tempSensor.getTempCByIndex(0);
     tempSensor.requestTemperatures(); 
-    lastTempRequestTime = now;
+    lastTempRequestTime = nowMs;
     Serial.print("[DEBUG] Temp read: ");
     Serial.print(currentTemperature);
     Serial.println(" C");
   }
 
   // ---------- Main Sensor Sampling (250Hz for ECG, 25Hz for PPG/MPU6050) ----------
-  if (now - lastEcgReadTime >= ecgReadInterval) {
-    lastEcgReadTime = now;
+  if (nowUs - lastEcgReadTime >= ecgReadInterval) {
+    lastEcgReadTime += ecgReadInterval;
 
     if (ecgSampleCount < maxEcgSamples) {
       if (ecgSampleCount == 0) {
@@ -224,6 +227,7 @@ void loop() {
       if (ecgSampleCount % 10 == 0 && ppgSampleCount < maxPpgSamples) {
         // Read MAX30102
         if (maxReady) {
+          particleSensor.check(); // Check FIFO for new data
           irArray[ppgSampleCount] = particleSensor.getIR();
           redArray[ppgSampleCount] = particleSensor.getRed();
         } else {
@@ -257,12 +261,12 @@ void loop() {
             // Phase 1: Free Fall (Low-G)
             if (!freeFallDetected && accelMag < 5.88) { // 0.6g
               freeFallDetected = true;
-              fallStartTime = now;
+              fallStartTime = nowMs;
               Serial.println("[DEBUG] Phase 1 Triggered: Free Fall detected (Low-G). Waiting for impact...");
             }
 
             // Reset Free Fall if no impact happens within 500ms
-            if (freeFallDetected && (now - fallStartTime > 500)) {
+            if (freeFallDetected && (nowMs - fallStartTime > 500)) {
               freeFallDetected = false;
               Serial.println("[DEBUG] Phase 1 Reset: Timeout (no impact within 500ms).");
             }
@@ -271,12 +275,12 @@ void loop() {
             if (freeFallDetected && accelMag > 27.44) { // 2.8g
               impactDetected = true;
               freeFallDetected = false;
-              impactTime = now;
+              impactTime = nowMs;
               Serial.println("[DEBUG] Phase 2 Triggered: Impact detected (High-G). Validating posture...");
             }
 
             // Phase 3: Posture & Inactivity Validation (Evaluated 2s after impact)
-            if (impactDetected && (now - impactTime >= 2000)) {
+            if (impactDetected && (nowMs - impactTime >= 2000)) {
               // Calculate tilt using the converted Z-axis (az)
               float tiltAngle = acos(az / accelMag) * 180.0 / PI;
               bool isStationary = abs(accelMag - 9.81) < 1.96; // Within 0.2g margin
@@ -344,4 +348,5 @@ void loop() {
       Serial.println();
     }
   }
+  delay(1); // Yield to prevent Core 1 Task Watchdog starvation
 }

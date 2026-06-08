@@ -11,7 +11,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid, PieChart, Pie, Cell
 } from "recharts";
 import { useTheme, useTokens } from "./ThemeContext";
-import { useDailySummaries, API_URL } from "./useBackend";
+import { useDailySummaries, useECGRecords, API_URL } from "./useBackend";
 
 function useColors() {
   const { theme } = useTheme();
@@ -339,6 +339,7 @@ export function RiskTrendsScreen() {
   const c = useColors();
   const navigate = useNavigate();
   const { summaries, loading } = useDailySummaries();
+  const { records: backendRecords } = useECGRecords();
   const [range, setRange] = useState<"7d" | "30d" | "90d" | "1y">("30d");
   const [chartType, setChartType] = useState<"area" | "bar">("area");
   const [expandedMetric, setExpandedMetric] = useState<number | null>(null);
@@ -584,68 +585,87 @@ export function RiskTrendsScreen() {
   }, [range]);
 
   const { healthData, hrData, spo2Data, tempData, RISK_SCORE, RISK_COLOR, last7 } = useMemo(() => {
-    let rawData = apiData;
-    let isMock = false;
-    if (apiData.length === 0) {
-      rawData = generateMockTrendsData(range);
-      isMock = true;
-    }
+    // Generate the full range of mock data (e.g. 7, 30, 90, or 365 days)
+    const mockData = generateMockTrendsData(range);
 
-    let totalScore = 0;
-    const hData = rawData.map((d, index) => {
-      if (isMock) {
-        totalScore += d.value;
-        return d;
+    // Merge real apiData into the mockData
+    const realDataByDate: Record<string, any> = {};
+    apiData.forEach(d => {
+      if (!d.day) return;
+      const dateKey = d.day.substring(0, 10); // Extract "YYYY-MM-DD"
+      if (!realDataByDate[dateKey]) {
+        realDataByDate[dateKey] = [];
       }
-      
-      let s: number;
-      if (d.avgScore != null && d.avgScore > 0) {
-        s = Math.round(d.avgScore);
-      } else {
-        const bpmVal = d.avgBpm || 72;
-        const spo2Val = d.avgSpo2 || 97;
-        s = Math.round(Math.max(40, Math.min(100, 100 - Math.abs(72 - bpmVal) - Math.max(0, 95 - spo2Val) * 4)));
-      }
-      totalScore += s;
-      
-      let event: any = undefined;
-      const dateStr = d.day;
-      const dayLabel = d.day.substring(5);
-      
-      if (range === "7d") {
-        if (index === 2) event = { type: "anomaly", title: "Elevated resting HR", description: "32 minutes above baseline during afternoon" };
-        else if (index === 5) event = { type: "alert", title: "Irregular rhythm episode", description: "42 seconds, self-resolved at 2:14 PM" };
-      } else if (range === "30d") {
-        if (index === 9) event = { type: "symptom", title: "Symptom: mild fatigue", description: "Logged by patient at 6:00 PM" };
-        else if (index === 14) event = { type: "alert", title: "ST segment deviation", description: "+0.8 mV detected during mild exertion" };
-        else if (index === 21) event = { type: "visit", title: "Report Shared", description: "Weekly trend data shared with Dr. Adnan" };
-        else if (index === 27) event = { type: "anomaly", title: "Afternoon rhythm variation", description: "Brief variation, within normal range" };
-      } else if (range === "90d") {
-        if (index === 20) event = { type: "alert", title: "Irregular rhythm episode", description: "35 seconds, self-resolved" };
-        else if (index === 45) event = { type: "visit", title: "Report Shared", description: "Monthly report shared with Dr. Adnan" };
-        else if (index === 70) event = { type: "anomaly", title: "HRV drop below baseline", description: "Low sleep quality noted" };
-      } else if (range === "1y") {
-        if (index === Math.round(rawData.length / 4)) event = { type: "alert", title: "Irregular rhythm episode", description: "55 seconds, self-resolved" };
-        else if (index === Math.round(rawData.length / 2)) event = { type: "visit", title: "Doctor Review", description: "Data reviewed at cardiology clinic" };
-      }
-
-      return {
-        label: dayLabel,
-        value: s,
-        dateStr,
-        event
-      };
+      realDataByDate[dateKey].push(d);
     });
 
-    const avgScore = rawData.length ? Math.round(totalScore / rawData.length) : 73;
+    // Now, map mockData and override with real data if it exists for that date!
+    const mergedData = mockData.map((mockPoint, index) => {
+      const dateKey = mockPoint.day; // mockPoint.day is already "YYYY-MM-DD"
+      const realPoints = realDataByDate[dateKey];
+      
+      if (realPoints && realPoints.length > 0) {
+        // We have real data for this date! Average the values
+        let totalBpm = 0;
+        let totalSpo2 = 0;
+        let totalTemp = 0;
+        let totalScore = 0;
+        let scoreCount = 0;
+        
+        realPoints.forEach((p: any) => {
+          totalBpm += p.avgBpm || 72;
+          totalSpo2 += p.avgSpo2 || 97;
+          totalTemp += p.avgTemp || 36.6;
+          
+          if (p.avgScore != null && p.avgScore > 0) {
+            totalScore += p.avgScore;
+            scoreCount++;
+          }
+        });
+        
+        const avgBpm = Math.round(totalBpm / realPoints.length);
+        const avgSpo2 = Math.round(totalSpo2 / realPoints.length);
+        const avgTemp = parseFloat((totalTemp / realPoints.length).toFixed(1));
+        
+        let s: number;
+        if (scoreCount > 0) {
+          s = Math.round(totalScore / scoreCount);
+        } else {
+          // Calculate score from bpm and spo2
+          s = Math.round(Math.max(40, Math.min(100, 100 - Math.abs(72 - avgBpm) - Math.max(0, 95 - avgSpo2) * 4)));
+        }
+        
+        // Use the event from the last real point if it exists
+        const lastRealPoint = realPoints[realPoints.length - 1];
+        
+        return {
+          ...mockPoint,
+          avgBpm,
+          avgSpo2,
+          avgTemp,
+          value: s,
+          isReal: true,
+          event: lastRealPoint.event || mockPoint.event
+        };
+      }
+      
+      return mockPoint;
+    });
+
+    let totalScore = 0;
+    mergedData.forEach(d => {
+      totalScore += d.value;
+    });
+
+    const avgScore = mergedData.length ? Math.round(totalScore / mergedData.length) : 73;
     const color = avgScore >= 78 ? c.green : avgScore >= 60 ? c.amber : c.red;
-    const l7 = hData.slice(-7).map(x => x.value);
+    const l7 = mergedData.slice(-7).map(x => x.value);
     
     return {
-      healthData: hData,
-      hrData: rawData.map(d => ({ label: d.day.substring(5), value: d.avgBpm || 72 })),
-      spo2Data: rawData.map(d => ({ label: d.day.substring(5), value: d.avgSpo2 || 98 })),
-      tempData: rawData.map(d => ({ label: d.day.substring(5), value: d.avgTemp || 36.6 })),
+      healthData: mergedData,
+      hrData: mergedData.map(d => ({ label: d.label, value: d.avgBpm })),
+      spo2Data: mergedData.map(d => ({ label: d.label, value: d.avgSpo2 })),
+      tempData: mergedData.map(d => ({ label: d.label, value: d.avgTemp })),
       RISK_SCORE: avgScore,
       RISK_COLOR: color,
       last7: l7.length > 0 ? l7 : [70, 71, 72, 70, 71, 72, 73]
@@ -686,7 +706,33 @@ export function RiskTrendsScreen() {
     color: f.color,
   }));
 
-  const visibleAlerts = showAllAlerts ? alertHistory : alertHistory.slice(0, 5);
+  const dynamicAlertHistory = useMemo(() => {
+    const realAlerts = backendRecords
+      .filter(r => {
+        const isAnomaly = r.ai_summary && (r.ai_summary.toLowerCase().includes("anomaly") || r.ai_summary.toLowerCase().includes("irregular") || r.ai_summary.toLowerCase().includes("tachycardia"));
+        const severity = r.clinical_verdict?.severity || (isAnomaly ? "critical" : "normal");
+        return severity === "critical" || severity === "warning";
+      })
+      .map(r => {
+        const d = new Date(r.timestamp);
+        const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + `, ` + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        const condition = r.clinical_verdict?.condition || "Irregular rhythm episode";
+        const severity = r.clinical_verdict?.severity || "critical";
+        return {
+          date: dateStr,
+          type: severity === "critical" ? "alert" : "anomaly",
+          name: condition,
+          duration: `${Math.round((r.waveform_data || []).length / 100)} seconds, self-resolved`,
+          color: severity === "critical" ? "#E8304A" : "#F5A623",
+          isReal: true,
+          recordId: r.id
+        };
+      });
+
+    return [...realAlerts, ...alertHistory];
+  }, [backendRecords]);
+
+  const visibleAlerts = showAllAlerts ? dynamicAlertHistory : dynamicAlertHistory.slice(0, 5);
 
   const tooltipLight: React.CSSProperties = { background: c.cardBg, borderRadius: 8, border: `1px solid ${c.cardBorder}`, fontFamily: "DM Mono, monospace", fontSize: 11, color: c.bodyText };
   const bodyCard: React.CSSProperties = { background: c.cardBg, border: `1px solid ${c.cardBorder}`, borderRadius: 12, boxShadow: c.shadow };
