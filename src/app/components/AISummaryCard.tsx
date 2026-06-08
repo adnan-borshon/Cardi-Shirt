@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, ArrowRight, Loader2 } from "lucide-react";
+import { Sparkles, ArrowRight, Loader2, Activity, ShieldAlert, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useTokens } from "./ThemeContext";
 import { useLiveVitals, LiveVitals } from "./useBackend";
 import { useNavigate } from "react-router";
@@ -328,6 +328,120 @@ export function AISummaryCard() {
               } <span style={{ fontSize: 10, color: tk.textSecondary, fontWeight: 400 }}>mV</span>
             </span>
           </div>
+        </div>
+      )}
+
+      {/* MIT-BIH Clinical Diagnostic Verdict Section */}
+      {hasData && (
+        <div 
+          className="mt-4 p-4 rounded-lg transition-all duration-300" 
+          style={{ 
+            background: isDark ? "rgba(20, 24, 40, 0.6)" : "rgba(255, 255, 255, 0.5)",
+            border: `1px dashed ${
+              vitals?.clinical_verdict?.severity === "critical"
+                ? "rgba(232, 48, 74, 0.3)"
+                : vitals?.clinical_verdict?.severity === "warning"
+                ? "rgba(245, 166, 35, 0.3)"
+                : "rgba(39, 194, 138, 0.2)"
+            }`,
+            borderLeft: `4px solid ${
+              vitals?.clinical_verdict?.severity === "critical"
+                ? tk.cardiacRed
+                : vitals?.clinical_verdict?.severity === "warning"
+                ? tk.amber
+                : tk.green
+            }`
+          }}
+        >
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <Activity size={14} style={{ color: tk.textSecondary }} className="animate-pulse" />
+              <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 600 }}>
+                Clinical Decision Support
+              </span>
+              <span style={{ color: tk.textMuted, fontSize: 10, fontFamily: "DM Mono, monospace" }}>
+                (MIT-BIH Reference Standard)
+              </span>
+            </div>
+            
+            {vitals?.clinical_verdict ? (
+              <div 
+                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"
+                style={{ 
+                  background: 
+                    vitals.clinical_verdict.severity === "critical" 
+                      ? "rgba(232, 48, 74, 0.12)" 
+                      : vitals.clinical_verdict.severity === "warning" 
+                      ? "rgba(245, 166, 35, 0.12)" 
+                      : "rgba(39, 194, 138, 0.12)",
+                  color: 
+                    vitals.clinical_verdict.severity === "critical" 
+                      ? tk.cardiacRed 
+                      : vitals.clinical_verdict.severity === "warning" 
+                      ? tk.amber 
+                      : tk.green
+                }}
+              >
+                <span 
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    vitals.clinical_verdict.severity !== "normal" ? "animate-ping animate-duration-1000" : ""
+                  }`} 
+                  style={{ 
+                    background: 
+                      vitals.clinical_verdict.severity === "critical" 
+                        ? tk.cardiacRed 
+                        : vitals.clinical_verdict.severity === "warning" 
+                        ? tk.amber 
+                        : tk.green 
+                  }} 
+                />
+                {vitals.clinical_verdict.severity}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1" style={{ color: tk.textSecondary }}>
+                <Loader2 size={11} className="animate-spin" />
+                <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace" }}>Analyzing...</span>
+              </div>
+            )}
+          </div>
+
+          {vitals?.clinical_verdict ? (
+            <div className="space-y-2">
+              <div 
+                style={{ 
+                  color: 
+                    vitals.clinical_verdict.severity === "critical" 
+                      ? tk.cardiacRed 
+                      : vitals.clinical_verdict.severity === "warning" 
+                      ? tk.amber 
+                      : tk.textPrimary,
+                  fontFamily: "Syne, sans-serif",
+                  fontSize: 14, 
+                  fontWeight: 600 
+                }}
+              >
+                {vitals.clinical_verdict.condition}
+              </div>
+              <ul className="space-y-1.5 pl-1">
+                {vitals.clinical_verdict.findings.map((finding, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-[12px] leading-relaxed" style={{ color: tk.textSecondary }}>
+                    {vitals.clinical_verdict?.severity === "critical" ? (
+                      <ShieldAlert size={13} style={{ color: tk.cardiacRed, marginTop: 2, flexShrink: 0 }} />
+                    ) : vitals.clinical_verdict?.severity === "warning" ? (
+                      <AlertCircle size={13} style={{ color: tk.amber, marginTop: 2, flexShrink: 0 }} />
+                    ) : (
+                      <CheckCircle2 size={13} style={{ color: tk.green, marginTop: 2, flexShrink: 0 }} />
+                    )}
+                    <span>{finding}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div style={{ color: tk.textSecondary, fontSize: 12, fontFamily: "Syne, sans-serif" }}>
+              Awaiting standard 10-second ECG window to compile disease classification metrics.
+            </div>
+          )}
         </div>
       )}
 
