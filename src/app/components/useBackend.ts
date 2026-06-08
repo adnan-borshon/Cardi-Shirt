@@ -1,7 +1,17 @@
 import {useState,useEffect,useRef,useCallback} from "react";
 import {io,Socket} from "socket.io-client";
 
-const API_URL="http://localhost:4000";
+const getApiUrl = () => {
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== "localhost" && hostname !== "127.0.0.1") {
+      return `http://${hostname}:4000`;
+    }
+  }
+  return "http://localhost:4000";
+};
+
+const API_URL = getApiUrl();
 let _socket:Socket|null=null;
 
 function getSocket():Socket{
@@ -60,21 +70,31 @@ clinical_verdict?: ClinicalVerdict | null;
 
 // Hook: real-time vitals via WebSocket
 export function useLiveVitals(){
+const s=getSocket();
 const[vitals,setVitals]=useState<LiveVitals|null>(null);
-const[connected,setConnected]=useState(false);
+const[connected,setConnected]=useState(s.connected);
 const[sos,setSos]=useState<SOSEvent|null>(null);
 
 useEffect(()=>{
-const s=getSocket();
-s.on("connect",()=>setConnected(true));
-s.on("disconnect",()=>setConnected(false));
-s.on("vitals",(data:LiveVitals)=>setVitals(data));
-s.on("sos",(data:SOSEvent)=>setSos(data));
+const handleConnect=()=>setConnected(true);
+const handleDisconnect=()=>setConnected(false);
+const handleVitals=(data:LiveVitals)=>setVitals(data);
+const handleSos=(data:SOSEvent)=>setSos(data);
+
+s.on("connect",handleConnect);
+s.on("disconnect",handleDisconnect);
+s.on("vitals",handleVitals);
+s.on("sos",handleSos);
+
+setConnected(s.connected);
+
 return()=>{
-s.off("vitals");
-s.off("sos");
+s.off("connect",handleConnect);
+s.off("disconnect",handleDisconnect);
+s.off("vitals",handleVitals);
+s.off("sos",handleSos);
 };
-},[]);
+},[s]);
 
 const dismissSos=useCallback(()=>setSos(null),[]);
 return{vitals,connected,sos,dismissSos};
@@ -108,8 +128,9 @@ useEffect(()=>{fetchRecords();},[fetchRecords]);
 // Re-fetch when new ECG session arrives via socket
 useEffect(()=>{
 const s=getSocket();
-s.on("ecg_session",()=>fetchRecords());
-return()=>{s.off("ecg_session");};
+const handleSession=()=>fetchRecords();
+s.on("ecg_session",handleSession);
+return()=>{s.off("ecg_session",handleSession);};
 },[fetchRecords]);
 
 return{records,loading,error,refetch:fetchRecords};
@@ -150,6 +171,6 @@ return{summaries,loading,error,refetch:fetchSummaries};
 }
 
 export function useGeolocationWatcher(){useEffect(()=>{if(typeof window==="undefined"||!navigator.geolocation)return;const watchId=navigator.geolocation.watchPosition(async(pos)=>{const{latitude:lat,longitude:lng}=pos.coords;try{await fetch(`${API_URL}/api/location/update`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng})});}catch(e){console.error(e);}},e=>console.warn(e),{enableHighAccuracy:true,timeout:10000,maximumAge:0});return()=>{navigator.geolocation.clearWatch(watchId);};},[]);}
-export function useLiveLocation(){const[loc,setLoc]=useState<{lat:number;lng:number}|null>(null);useEffect(()=>{fetch(`${API_URL}/api/location/current`).then(r=>r.json()).then(d=>setLoc(d)).catch(e=>console.error(e));const s=getSocket();s.on("location_change",(d:{lat:number;lng:number})=>setLoc(d));return()=>{s.off("location_change");};},[]);return loc;}
+export function useLiveLocation(){const[loc,setLoc]=useState<{lat:number;lng:number}|null>(null);useEffect(()=>{fetch(`${API_URL}/api/location/current`).then(r=>r.json()).then(d=>setLoc(d)).catch(e=>console.error(e));const s=getSocket();const handleLocationChange=(d:{lat:number;lng:number})=>setLoc(d);s.on("location_change",handleLocationChange);return()=>{s.off("location_change",handleLocationChange);};},[]);return loc;}
 
 export{API_URL};

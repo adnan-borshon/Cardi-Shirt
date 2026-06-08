@@ -20,7 +20,7 @@ const int MPU_ADDR = 0x68; // Address for the MPU6050
 
 const int maxEcgSamples = 500;
 const int maxPpgSamples = 50;
-float ecgArray[maxEcgSamples];
+int ecgArray[maxEcgSamples];
 long irArray[maxPpgSamples];
 long redArray[maxPpgSamples];
 int ecgSampleCount = 0;
@@ -48,7 +48,7 @@ float currentTemperature = 36.5;
 // ---------- background upload task config ----------
 TaskHandle_t uploadTaskHandle = NULL;
 
-float ecgTxBuffer[maxEcgSamples];
+int ecgTxBuffer[maxEcgSamples];
 long irTxBuffer[maxPpgSamples];
 long redTxBuffer[maxPpgSamples];
 float txTemp = 36.5;
@@ -68,26 +68,35 @@ void uploadTask(void * pvParameters) {
         HTTPClient http;
         http.begin(serverUrl);
         http.addHeader("Content-Type", "application/json");
+        http.setTimeout(4000); // 4 seconds timeout
 
-        DynamicJsonDocument doc(16384);
-        doc["temp"] = txTemp;
-        doc["fall_detected"] = txFallFlag;
-        doc["sample_rate"] = txSampleRate;
-
-        JsonArray ecg = doc.createNestedArray("ecg_array");
-        JsonArray ir = doc.createNestedArray("ir_array");
-        JsonArray red = doc.createNestedArray("red_array");
-
-        for (int i = 0; i < maxEcgSamples; i++) {
-          ecg.add(ecgTxBuffer[i]);
-        }
-        for (int i = 0; i < maxPpgSamples; i++) {
-          ir.add(irTxBuffer[i]);
-          red.add(redTxBuffer[i]);
-        }
-
+        // Construct JSON payload manually to avoid heavy heap allocation of DynamicJsonDocument
         String payload;
-        serializeJson(doc, payload);
+        payload.reserve(8192); // Pre-allocate 8KB buffer to prevent reallocations
+        payload += "{\"temp\":";
+        payload += String(txTemp, 1);
+        payload += ",\"fall_detected\":";
+        payload += txFallFlag ? "true" : "false";
+        payload += ",\"sample_rate\":";
+        payload += String(txSampleRate, 1);
+        
+        payload += ",\"ecg_array\":[";
+        for (int i = 0; i < maxEcgSamples; i++) {
+          payload += String(ecgTxBuffer[i]);
+          if (i < maxEcgSamples - 1) payload += ",";
+        }
+        payload += "],\"ir_array\":[";
+        for (int i = 0; i < maxPpgSamples; i++) {
+          payload += String(irTxBuffer[i]);
+          if (i < maxPpgSamples - 1) payload += ",";
+        }
+        payload += "],\"red_array\":[";
+        for (int i = 0; i < maxPpgSamples; i++) {
+          payload += String(redTxBuffer[i]);
+          if (i < maxPpgSamples - 1) payload += ",";
+        }
+        payload += "]}";
+
         int resp = http.POST(payload);
 
         Serial.print("[Upload Task] Payload size: ");
@@ -162,7 +171,8 @@ void setup() {
   }
 
   // ---------- WiFi Setup ----------
-  Serial.println("Connecting to WiFi...");
+  Serial.print("Connecting to WiFi SSID: ");
+  Serial.println(ssid);
   WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
