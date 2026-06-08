@@ -14,7 +14,7 @@ const getApiUrl = () => {
 const API_URL = getApiUrl();
 let _socket:Socket|null=null;
 
-function getSocket():Socket{
+export function getSocket():Socket{
 if(!_socket){
 _socket=io(API_URL,{transports:["websocket","polling"],reconnection:true,reconnectionDelay:2000});
 }
@@ -170,6 +170,17 @@ setLoading(false);
 },[]);
 
 useEffect(()=>{fetchSummaries();},[fetchSummaries]);
+
+useEffect(()=>{
+const s=getSocket();
+const handleUpdate=()=>fetchSummaries();
+s.on("daily_summary",handleUpdate);
+s.on("ecg_session",handleUpdate);
+return()=>{
+s.off("daily_summary",handleUpdate);
+s.off("ecg_session",handleUpdate);
+};
+},[fetchSummaries]);
 
 return{summaries,loading,error,refetch:fetchSummaries};
 }

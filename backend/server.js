@@ -343,6 +343,7 @@ app.post("/api/esp32/data", (req, res) => {
            hrv_rmssd, st_deviation_mv, breathing_rate, stress_index, ai_health_score]
         );
         persist();
+        io.emit("vitals_saved");
         accumulatedVitals = { bpm:[], temp:[], spo2:[], fall_detected:false };
         lastInsertTime = now;
       }
@@ -685,6 +686,7 @@ cron.schedule("0 0 * * *", async () => {
     }
     db.run("INSERT INTO daily_summaries(summary)VALUES(?)", [summary]);
     persist();
+    io.emit("daily_summary");
     console.log("[CRON] Generated daily summary");
   } catch (err) {
     console.error("[CRON] Error:", err.message);

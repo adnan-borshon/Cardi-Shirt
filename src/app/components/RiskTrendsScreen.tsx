@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import {
   TrendingDown, TrendingUp, Minus, ChevronDown, ChevronUp, Heart,
@@ -11,7 +11,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid, PieChart, Pie, Cell
 } from "recharts";
 import { useTheme, useTokens } from "./ThemeContext";
-import { useDailySummaries, useECGRecords, API_URL } from "./useBackend";
+import { useDailySummaries, useECGRecords, API_URL, getSocket } from "./useBackend";
 
 function useColors() {
   const { theme } = useTheme();
@@ -577,12 +577,27 @@ export function RiskTrendsScreen() {
     printWindow.document.close();
   };
 
-  useEffect(() => {
+  const fetchTrendsData = useCallback(() => {
     fetch(`${API_URL}/api/trends?range=${range}`)
       .then(res => res.json())
       .then(d => setApiData(Array.isArray(d) ? d : []))
       .catch(e => console.error("[Trends]", e));
   }, [range]);
+
+  useEffect(() => {
+    fetchTrendsData();
+  }, [fetchTrendsData]);
+
+  useEffect(() => {
+    const s = getSocket();
+    const handleUpdate = () => fetchTrendsData();
+    s.on("vitals_saved", handleUpdate);
+    s.on("ecg_session", handleUpdate);
+    return () => {
+      s.off("vitals_saved", handleUpdate);
+      s.off("ecg_session", handleUpdate);
+    };
+  }, [fetchTrendsData]);
 
   const { healthData, hrData, spo2Data, tempData, RISK_SCORE, RISK_COLOR, last7 } = useMemo(() => {
     // Generate the full range of mock data (e.g. 7, 30, 90, or 365 days)

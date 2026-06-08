@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Flame, Trophy,
   Heart, Shirt, User, Sparkles, Edit3, Pill, AlertTriangle,
@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useTokens, useTheme } from "./ThemeContext";
-import { API_URL } from "./useBackend";
+import { API_URL, getSocket } from "./useBackend";
 
 // --- Types & Data Structures ---
 interface DayData {
@@ -279,12 +279,27 @@ export function CardiacDiaryScreen() {
     setTimeout(() => setNoteSaved(false), 2000);
   };
 
-  useEffect(() => {
+  const fetchDiarySummary = useCallback(() => {
     fetch(`${API_URL}/api/diary/summary`)
       .then((r) => r.json())
       .then((data) => setApiData(Array.isArray(data) ? data : []))
       .catch((e) => console.error("Error loading diary summaries:", e));
   }, []);
+
+  useEffect(() => {
+    fetchDiarySummary();
+  }, [fetchDiarySummary]);
+
+  useEffect(() => {
+    const s = getSocket();
+    const handleUpdate = () => fetchDiarySummary();
+    s.on("vitals_saved", handleUpdate);
+    s.on("ecg_session", handleUpdate);
+    return () => {
+      s.off("vitals_saved", handleUpdate);
+      s.off("ecg_session", handleUpdate);
+    };
+  }, [fetchDiarySummary]);
 
   type MedSlot = "morning" | "noon" | "evening";
   interface MedEntry { id: string; name: string; dosage: string; time: string; }
