@@ -113,24 +113,7 @@ export function Sidebar({}: SidebarProps) {
         </div>
       </div>
 
-      {/* Shirt Status */}
-      <div className="px-3 py-3 mx-2 mb-2 rounded-lg" style={{ background: tk.cardElevated }}>
-        <div className="flex items-center gap-2 mb-1">
-          <div className="relative">
-            <svg width="20" height="24" viewBox="0 0 24 28" fill="none">
-              <path d="M6 4L2 8V24H22V8L18 4H15C15 6.2 13.2 8 11 8H13C10.8 8 9 6.2 9 4H6Z" stroke={connected ? "#27C28A" : tk.textMuted} strokeWidth="1.5" fill="none" />
-            </svg>
-            <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${connected ? 'bg-[#27C28A] animate-pulse' : 'bg-gray-500'}`} />
-          </div>
-          {!collapsed && <span style={{ color: connected ? "#27C28A" : tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 11 }}>{connected ? "Connected" : "Disconnected"}</span>}
-        </div>
-        {!collapsed && (
-          <div className="flex items-center gap-3 mt-1" style={{ color: tk.textSecondary, fontSize: 10 }}>
-            <div className="flex items-center gap-1"><BatteryMedium size={12} /><span style={{ fontFamily: "DM Mono, monospace" }}>{vitals?.temp ? "98%" : "--"}</span></div>
-            <div className="flex items-center gap-1"><Signal size={12} /><span style={{ fontFamily: "DM Mono, monospace" }}>{connected ? "Strong" : "None"}</span></div>
-          </div>
-        )}
-      </div>
+
 
       {/* Patient */}
       <div className="px-3 py-3 flex items-center gap-3 relative cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ borderTop: `0.5px solid ${tk.cardBorder}` }} onClick={() => setProfileModalOpen(!profileModalOpen)}>

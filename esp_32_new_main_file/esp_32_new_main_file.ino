@@ -8,7 +8,7 @@
 
 const char* ssid = "Borshon";
 const char* pass = "Adnan123";
-const char* serverUrl = "http://192.168.0.101:4000/api/esp32/data";
+const char* serverUrl = "http://192.168.0.103:4000/api/esp32/data";
 
 #define ONE_WIRE_BUS 4
 OneWire oneWire(ONE_WIRE_BUS);

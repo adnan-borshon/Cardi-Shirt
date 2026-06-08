@@ -22,6 +22,17 @@ export function VitalsRow() {
   const lastActiveRef = useRef<number>(Date.now());
   const [isHardwareActive, setIsHardwareActive] = useState(false);
 
+  // Moving average history states (last 5 calculations ~ 10 seconds of data)
+  const [bpmHistory, setBpmHistory] = useState<number[]>([]);
+  const [tempHistory, setTempHistory] = useState<number[]>([]);
+  const [spo2History, setSpo2History] = useState<number[]>([]);
+  const [aiHistory, setAiHistory] = useState<number[]>([]);
+  const [hrvHistory, setHrvHistory] = useState<number[]>([]);
+  const [brHistory, setBrHistory] = useState<number[]>([]);
+  const [siHistory, setSiHistory] = useState<number[]>([]);
+  const [stHistory, setStHistory] = useState<number[]>([]);
+  const [rPeakHistory, setRPeakHistory] = useState<number[]>([]);
+
   useEffect(() => {
     if (vitals) {
       lastActiveRef.current = Date.now();
@@ -31,7 +42,7 @@ export function VitalsRow() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (Date.now() - lastActiveRef.current > 4000) {
+      if (Date.now() - lastActiveRef.current > 8000) {
         setIsHardwareActive(false);
       }
     }, 1000);
@@ -40,108 +51,201 @@ export function VitalsRow() {
 
   const isActive = connected && isHardwareActive && vitals;
 
-  // Server-computed clinical values — NO local math.
-  // All values are pre-computed in Python DSP and received via WebSocket.
-  // null = DSP unavailable or insufficient data for that metric.
-  const bpm    = isActive ? Math.round(vitals.bpm) : 0;
-  const temp   = isActive ? vitals.temp : 0;
-  const spo2   = isActive && vitals.spo2 ? Math.round(vitals.spo2) : 0;
+  useEffect(() => {
+    if (isActive && vitals) {
+      const updateHistory = (
+        val: number | null | undefined,
+        setter: React.Dispatch<React.SetStateAction<number[]>>,
+        allowZero = false
+      ) => {
+        if (val !== null && val !== undefined && !isNaN(val) && (allowZero || val !== 0)) {
+          setter((prev) => {
+            const next = [...prev, val];
+            if (next.length > 5) return next.slice(-5);
+            return next;
+          });
+        }
+      };
 
-  const aiScore       = isActive ? (vitals.ai_health_score   ?? null) : null;
-  const hrv           = isActive ? (vitals.hrv_rmssd          ?? null) : null;
-  const breathingRate = isActive ? (vitals.breathing_rate     ?? null) : null;
-  const stressIndex   = isActive ? (vitals.stress_index       ?? null) : null;
-  const rPeakInterval = isActive ? (vitals.r_peak_interval_ms ?? null) : null;
+      updateHistory(vitals.bpm, setBpmHistory);
+      updateHistory(vitals.temp, setTempHistory);
+      updateHistory(vitals.spo2, setSpo2History);
+      updateHistory(vitals.ai_health_score, setAiHistory);
+      updateHistory(vitals.hrv_rmssd, setHrvHistory);
+      updateHistory(vitals.breathing_rate, setBrHistory);
+      updateHistory(vitals.stress_index, setSiHistory);
+      updateHistory(vitals.st_deviation_mv, setStHistory, true);
+      updateHistory(vitals.r_peak_interval_ms, setRPeakHistory);
+    } else {
+      // Clear histories on disconnect
+      setBpmHistory([]);
+      setTempHistory([]);
+      setSpo2History([]);
+      setAiHistory([]);
+      setHrvHistory([]);
+      setBrHistory([]);
+      setSiHistory([]);
+      setStHistory([]);
+      setRPeakHistory([]);
+    }
+  }, [vitals, isActive]);
 
-  // Format ST float as "+0.12" or "-0.05" for display
-  const stSegmentRaw = isActive ? (vitals.st_deviation_mv ?? null) : null;
-  const stSegment    = stSegmentRaw !== null
-    ? (stSegmentRaw >= 0 ? `+${stSegmentRaw.toFixed(2)}` : stSegmentRaw.toFixed(2))
-    : null;
+  // Averaged display values
+  const avgBpm = bpmHistory.length > 0 ? bpmHistory.reduce((a, b) => a + b, 0) / bpmHistory.length : 0;
+  const avgTemp = tempHistory.length > 0 ? tempHistory.reduce((a, b) => a + b, 0) / tempHistory.length : 0;
+  const avgSpo2 = spo2History.length > 0 ? spo2History.reduce((a, b) => a + b, 0) / spo2History.length : 0;
+  const avgAi = aiHistory.length > 0 ? aiHistory.reduce((a, b) => a + b, 0) / aiHistory.length : null;
+  const avgHrv = hrvHistory.length > 0 ? hrvHistory.reduce((a, b) => a + b, 0) / hrvHistory.length : null;
+  const avgBr = brHistory.length > 0 ? brHistory.reduce((a, b) => a + b, 0) / brHistory.length : null;
+  const avgSi = siHistory.length > 0 ? siHistory.reduce((a, b) => a + b, 0) / siHistory.length : null;
+  const avgSt = stHistory.length > 0 ? stHistory.reduce((a, b) => a + b, 0) / stHistory.length : null;
+  const avgRPeak = rPeakHistory.length > 0 ? rPeakHistory.reduce((a, b) => a + b, 0) / rPeakHistory.length : null;
 
-  // Define Cards
+  const getCardProps = (
+    label: string,
+    historyLen: number,
+    displayVal: string,
+    unit: string,
+    icon: any,
+    normalAccent: string | (() => string),
+    normalTrendLabel: string,
+    normalDetail: string,
+    fallbackDetail: string
+  ) => {
+    if (!isActive) {
+      return {
+        label,
+        value: "—",
+        unit,
+        icon,
+        accent: "#9AA0B8",
+        trendLabel: "Offline",
+        detail: fallbackDetail,
+      };
+    }
+    if (historyLen === 0) {
+      return {
+        label,
+        value: "Calc...",
+        unit: "",
+        icon,
+        accent: "#5B8AF0",
+        trendLabel: "Calculating...",
+        detail: "Processing raw signal...",
+      };
+    }
+    const accentColor = typeof normalAccent === "function" ? normalAccent() : normalAccent;
+    return {
+      label,
+      value: displayVal,
+      unit,
+      icon,
+      accent: accentColor,
+      trendLabel: normalTrendLabel,
+      detail: normalDetail,
+    };
+  };
+
   const cards = [
-    {
-      label: "Heart Rate",
-      value: isActive && bpm > 0 ? String(bpm) : "—",
-      unit: "BPM",
-      icon: Heart,
-      accent: !isActive || bpm === 0 ? "#9AA0B8" : bpm > 100 || bpm < 50 ? "#E8304A" : "#27C28A",
-      trendLabel: isActive ? "Live" : "Offline",
-      detail: isActive ? `Updated just now` : "Awaiting hardware signal",
-    },
-    {
-      label: "Body Temp",
-      value: isActive && temp > 0 ? temp.toFixed(1) : "—",
-      unit: "°C",
-      icon: Activity,
-      accent: !isActive || temp === 0 ? "#9AA0B8" : temp > 37.5 || temp < 35.5 ? "#E8304A" : "#27C28A",
-      trendLabel: isActive ? "Live" : "Offline",
-      detail: isActive ? "From shirt thermistor" : "Sensor offline",
-    },
-    {
-      label: "SpO2",
-      value: isActive && spo2 > 0 ? String(spo2) : "—",
-      unit: "%",
-      icon: Droplet,
-      accent: !isActive || spo2 === 0 ? "#9AA0B8" : spo2 < 95 ? "#E8304A" : "#27C28A",
-      trendLabel: isActive ? "Live" : "Offline",
-      detail: isActive ? "Pulse Oximeter reading" : "Sensor offline",
-    },
-    {
-      label: "AI Health Score",
-      value: aiScore !== null ? String(aiScore) : "—",
-      unit: "/100",
-      icon: Shield,
-      accent: aiScore === null ? "#9AA0B8" : aiScore >= 80 ? "#27C28A" : aiScore >= 50 ? "#F5A623" : "#E8304A",
-      trendLabel: isActive ? "Dynamic" : "Offline",
-      detail: isActive ? "Calculated by vitals check" : "Awaiting calibration",
-    },
-    {
-      label: "HRV (RMSSD)",
-      value: hrv !== null ? String(hrv) : "—",
-      unit: "ms",
-      icon: Activity,
-      accent: hrv === null ? "#9AA0B8" : hrv >= 40 ? "#27C28A" : "#F5A623",
-      trendLabel: isActive ? "Good variability" : "Offline",
-      detail: isActive ? "RMSSD index" : "No active stream",
-    },
-    {
-      label: "Breathing Rate",
-      value: breathingRate !== null ? String(breathingRate) : "—",
-      unit: "BPM",
-      icon: Wind,
-      accent: breathingRate === null ? "#9AA0B8" : "#5B8AF0",
-      trendLabel: isActive ? "Normal" : "Offline",
-      detail: isActive ? "ECG-amplitude derived" : "Sensor offline",
-    },
-    {
-      label: "Stress Index",
-      value: stressIndex !== null ? String(stressIndex) : "—",
-      unit: "/100",
-      icon: Brain,
-      accent: stressIndex === null ? "#9AA0B8" : stressIndex < 35 ? "#27C28A" : stressIndex < 70 ? "#F5A623" : "#E8304A",
-      trendLabel: isActive ? (stressIndex < 35 ? "Low stress" : stressIndex < 70 ? "Moderate stress" : "High stress") : "Offline",
-      detail: isActive ? "Derived from HRV" : "Awaiting baseline",
-    },
-    {
-      label: "ST Segment",
-      value: stSegment !== null ? stSegment : "—",
-      unit: "mV",
-      icon: TrendingUp,
-      accent: stSegment === null ? "#9AA0B8" : stSegment.includes("-") || Number(stSegment) > 0.3 ? "#E8304A" : "#27C28A",
-      trendLabel: isActive ? "Stable range" : "Offline",
-      detail: isActive ? "Lead II displacement" : "Lead offline",
-    },
-    {
-      label: "R-Peak Interval",
-      value: rPeakInterval !== null ? String(rPeakInterval) : "—",
-      unit: "ms",
-      icon: Zap,
-      accent: rPeakInterval === null ? "#9AA0B8" : "#5B8AF0",
-      trendLabel: isActive ? "Regular rhythm" : "Offline",
-      detail: isActive ? "Interval consistency" : "Awaiting R-peaks",
-    },
+    getCardProps(
+      "Heart Rate",
+      bpmHistory.length,
+      String(Math.round(avgBpm)),
+      "BPM",
+      Heart,
+      () => (avgBpm > 100 || avgBpm < 50 ? "#E8304A" : "#27C28A"),
+      "Live",
+      "Averaging last 10s of data",
+      "Awaiting hardware signal"
+    ),
+    getCardProps(
+      "Body Temp",
+      tempHistory.length,
+      avgTemp.toFixed(1),
+      "°C",
+      Activity,
+      () => (avgTemp > 37.5 || avgTemp < 35.5 ? "#E8304A" : "#27C28A"),
+      "Live",
+      "From shirt thermistor",
+      "Sensor offline"
+    ),
+    getCardProps(
+      "SpO2",
+      spo2History.length,
+      String(Math.round(avgSpo2)),
+      "%",
+      Droplet,
+      () => (avgSpo2 < 95 ? "#E8304A" : "#27C28A"),
+      "Live",
+      "Pulse Oximeter reading",
+      "Sensor offline"
+    ),
+    getCardProps(
+      "AI Health Score",
+      aiHistory.length,
+      avgAi !== null ? String(Math.round(avgAi)) : "—",
+      "/100",
+      Shield,
+      () => (avgAi === null ? "#9AA0B8" : avgAi >= 80 ? "#27C28A" : avgAi >= 50 ? "#F5A623" : "#E8304A"),
+      "Dynamic",
+      "Calculated by vitals check",
+      "Awaiting calibration"
+    ),
+    getCardProps(
+      "HRV (RMSSD)",
+      hrvHistory.length,
+      avgHrv !== null ? String(Math.round(avgHrv)) : "—",
+      "ms",
+      Activity,
+      () => (avgHrv === null ? "#9AA0B8" : avgHrv >= 40 ? "#27C28A" : "#F5A623"),
+      "Good variability",
+      "RMSSD index",
+      "No active stream"
+    ),
+    getCardProps(
+      "Breathing Rate",
+      brHistory.length,
+      avgBr !== null ? String(Math.round(avgBr)) : "—",
+      "BPM",
+      Wind,
+      "#5B8AF0",
+      "Normal",
+      "ECG-amplitude derived",
+      "Sensor offline"
+    ),
+    getCardProps(
+      "Stress Index",
+      siHistory.length,
+      avgSi !== null ? String(Math.round(avgSi)) : "—",
+      "/100",
+      Brain,
+      () => (avgSi === null ? "#9AA0B8" : avgSi < 35 ? "#27C28A" : avgSi < 70 ? "#F5A623" : "#E8304A"),
+      avgSi !== null ? (avgSi < 35 ? "Low stress" : avgSi < 70 ? "Moderate stress" : "High stress") : "Offline",
+      "Derived from HRV",
+      "Awaiting baseline"
+    ),
+    getCardProps(
+      "ST Segment",
+      stHistory.length,
+      avgSt !== null ? (avgSt >= 0 ? `+${avgSt.toFixed(2)}` : avgSt.toFixed(2)) : "—",
+      "mV",
+      TrendingUp,
+      () => (avgSt === null ? "#9AA0B8" : avgSt < -0.05 || avgSt > 0.10 ? "#E8304A" : "#27C28A"),
+      "Stable range",
+      "Lead II displacement",
+      "Lead offline"
+    ),
+    getCardProps(
+      "R-Peak Interval",
+      rPeakHistory.length,
+      avgRPeak !== null ? String(Math.round(avgRPeak)) : "—",
+      "ms",
+      Zap,
+      "#5B8AF0",
+      "Regular rhythm",
+      "Interval consistency",
+      "Awaiting R-peaks"
+    ),
   ];
 
   // Prepend Emergency/Fall Alert if triggered
