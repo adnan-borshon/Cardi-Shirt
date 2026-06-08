@@ -166,71 +166,32 @@ function MetricRow({
 // ── Main component ────────────────────────────────────────────────────────────
 export function HealthSummaryCard() {
   const tk = useTokens();
-  const { vitals } = useLiveVitals();
+  const { vitals, connected } = useLiveVitals();
 
-  const [data, setData] = useState<DSPResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Derive DSP data directly from WebSocket vitals (already processed by backend -> DSP)
+  const data: DSPResult | null = vitals
+    ? {
+        bpm: vitals.bpm ?? 0,
+        spo2: vitals.spo2 ?? null,
+        hrv_rmssd: vitals.hrv_rmssd ?? null,
+        st_deviation_mv: vitals.st_deviation_mv ?? null,
+        breathing_rate: vitals.breathing_rate ?? null,
+        stress_index: vitals.stress_index ?? null,
+        ai_health_score: vitals.ai_health_score ?? null,
+      }
+    : null;
+
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [countdown, setCountdown] = useState(POLL_MS / 1000);
 
-  const vitalsRef = useRef(vitals);
-  vitalsRef.current = vitals;
-
-  const fetchData = async () => {
-    const v = vitalsRef.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const payload = {
-        ecg_array: v?.ecg_array ?? [],
-        ir_array: [],
-        red_array: [],
-        temp: v?.temp ?? 0,
-        current_bpm: v?.bpm ?? 0,
-        fall_detected: v?.fall_detected ?? false,
-        sample_rate: 250,
-      };
-      const res = await fetch("http://127.0.0.1:5001/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`DSP service returned ${res.status}`);
-      const json = await res.json();
-      setData({
-        bpm: json.bpm ?? 0,
-        spo2: json.spo2 ?? null,
-        hrv_rmssd: json.hrv_rmssd ?? null,
-        st_deviation_mv: json.st_deviation_mv ?? null,
-        breathing_rate: json.breathing_rate ?? null,
-        stress_index: json.stress_index ?? null,
-        ai_health_score: json.ai_health_score ?? null,
-      });
+  // Update timestamp whenever vitals change
+  useEffect(() => {
+    if (vitals) {
       setLastUpdated(new Date());
-      setCountdown(POLL_MS / 1000);
-    } catch (e: any) {
-      setError(e.message ?? "Unable to reach DSP service");
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [vitals]);
 
-  // Poll every 1 minute
-  useEffect(() => {
-    fetchData();
-    const pollId = setInterval(fetchData, POLL_MS);
-    return () => clearInterval(pollId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Countdown ticker
-  useEffect(() => {
-    const tick = setInterval(() => {
-      setCountdown((c) => (c > 0 ? c - 1 : POLL_MS / 1000));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, []);
+  const loading = !data && connected;
+  const error = !connected && !data ? "Not connected to server" : null;
 
   const scoreInfo = interpretScore(data?.ai_health_score ?? null);
   const scoreColor = STATUS_COLORS[scoreInfo.status as keyof typeof STATUS_COLORS] ?? STATUS_COLORS.neutral;
@@ -245,9 +206,6 @@ export function HealthSummaryCard() {
         { icon: TrendingUp, label: "ST Segment", ...interpretSt(data.st_deviation_mv) },
       ]
     : [];
-
-  const mins = Math.floor(countdown / 60);
-  const secs = String(countdown % 60).padStart(2, "0");
 
   return (
     <div
@@ -291,15 +249,8 @@ export function HealthSummaryCard() {
 
         <div className="flex items-center gap-2">
           {loading && <Loader2 size={13} className="animate-spin" style={{ color: tk.textMuted }} />}
-          <button
-            onClick={fetchData}
-            title="Refresh now"
-            style={{ color: tk.textMuted, lineHeight: 0 }}
-          >
-            <RefreshCw size={13} />
-          </button>
           <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>
-            {loading ? "Updating…" : `Next in ${mins}:${secs}`}
+            {loading ? "Waiting for data…" : connected ? "Streaming live" : "Disconnected"}
           </span>
         </div>
       </div>
@@ -383,7 +334,7 @@ export function HealthSummaryCard() {
           <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#27C28A" }} />
           <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>
             Last updated {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            &nbsp;· Auto-refreshes every 1 minute
+            &nbsp;· Live streaming via WebSocket
           </span>
         </div>
       )}

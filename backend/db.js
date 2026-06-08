@@ -51,6 +51,7 @@ async function getDb() {
   try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN st_deviation_mv REAL"); } catch (e) {}
   try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN breathing_rate REAL"); } catch (e) {}
   try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN r_peak_interval_ms REAL"); } catch (e) {}
+  try { _db.run("ALTER TABLE ecg_sessions ADD COLUMN clinical_verdict TEXT"); } catch (e) {}
 
   _db.run(`CREATE TABLE IF NOT EXISTS daily_summaries(
     id INTEGER PRIMARY KEY AUTOINCREMENT,

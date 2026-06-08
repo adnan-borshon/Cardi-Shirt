@@ -11,6 +11,12 @@ _socket=io(API_URL,{transports:["websocket","polling"],reconnection:true,reconne
 return _socket;
 }
 
+export interface ClinicalVerdict {
+  condition: string;
+  severity: "normal" | "warning" | "critical";
+  findings: string[];
+}
+
 export interface LiveVitals {
   bpm: number;
   temp: number;
@@ -25,6 +31,11 @@ export interface LiveVitals {
   stress_index?: number | null;
   r_peak_interval_ms?: number | null;
   ai_health_score?: number | null;
+  // Disease detection verdict from MIT-BIH analysis
+  clinical_verdict?: ClinicalVerdict | null;
+  // Simulation state
+  simulation_active?: boolean;
+  simulation_type?: string | null;
 }
 
 export interface SOSEvent{
@@ -44,6 +55,7 @@ hrv_rmssd?: number | null;
 st_deviation_mv?: number | null;
 breathing_rate?: number | null;
 r_peak_interval_ms?: number | null;
+clinical_verdict?: ClinicalVerdict | null;
 }
 
 // Hook: real-time vitals via WebSocket

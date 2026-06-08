@@ -39,6 +39,25 @@ let accumulatedEcg = [];
 let lastEcgSaveTime = Date.now();
 let currentPosition={lat:23.7925,lng:90.4078};
 
+// ---------- MIT-BIH Simulation Engine ----------
+const fs_node = require("fs");
+const path = require("path");
+let mitBihSamples = {};
+try {
+  const samplesPath = path.join(__dirname, "mit_bih_samples.json");
+  if (fs_node.existsSync(samplesPath)) {
+    mitBihSamples = JSON.parse(fs_node.readFileSync(samplesPath, "utf-8"));
+    console.log(`[MIT-BIH] Loaded ${Object.keys(mitBihSamples).length} clinical sample templates`);
+  } else {
+    console.warn("[MIT-BIH] mit_bih_samples.json not found — simulation disabled");
+  }
+} catch (err) {
+  console.error("[MIT-BIH] Failed to load samples:", err.message);
+}
+let simulationInterval = null;
+let simulationActive = false;
+let simulationType = null;
+
 const PORT = process.env.PORT || 4000;
 const app = express();
 app.use(cors());
@@ -233,7 +252,7 @@ app.post("/api/esp32/data", (req, res) => {
       }
 
       // Primary path — Python DSP (pass the rolling 10-second buffer)
-      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0, fall_detected, sample_rate });
+      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm:0, fall_detected, sample_rate, simulation_mode: simulationActive });
 
       // Fallback to JS if Python unavailable
       const ppgSampleRate = sample_rate / 10.0;
@@ -248,6 +267,7 @@ app.post("/api/esp32/data", (req, res) => {
       const stress_index    = dsp?.stress_index     ?? null;
       const r_peak_interval = dsp?.r_peak_interval_ms ?? null;
       const ai_health_score = dsp?.ai_health_score  ?? null;
+      const clinical_verdict = dsp?.clinical_verdict ?? null;
 
       dsp
         ? console.log(`[DATA+DSP] bpm=${bpm} spo2=${spo2} hrv=${hrv_rmssd} st=${st_deviation_mv} score=${ai_health_score}`)
@@ -288,6 +308,7 @@ app.post("/api/esp32/data", (req, res) => {
         let st_deviation_mv = 0.15;
         let breathing_rate = 15;
         let r_peak_interval_ms = 832;
+        let clinical_verdict = null;
 
         try {
           const dspResult = await callDSP({ ecg_array: accumulatedEcg });
@@ -297,13 +318,14 @@ app.post("/api/esp32/data", (req, res) => {
             if (typeof dspResult.st_deviation_mv === "number") st_deviation_mv = dspResult.st_deviation_mv;
             if (typeof dspResult.breathing_rate === "number") breathing_rate = dspResult.breathing_rate;
             if (typeof dspResult.r_peak_interval_ms === "number") r_peak_interval_ms = dspResult.r_peak_interval_ms;
+            if (dspResult.clinical_verdict) clinical_verdict = dspResult.clinical_verdict;
           }
         } catch (err) {
           console.error("[ECG Save] DSP computation failed, using defaults:", err.message);
         }
 
         db.run(
-          "INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms) VALUES(?,?,?,?,?,?,?,?)",
+          "INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms,clinical_verdict) VALUES(?,?,?,?,?,?,?,?,?)",
           [
             JSON.stringify(accumulatedEcg),
             "",
@@ -312,7 +334,8 @@ app.post("/api/esp32/data", (req, res) => {
             hrv_rmssd,
             st_deviation_mv,
             breathing_rate,
-            r_peak_interval_ms
+            r_peak_interval_ms,
+            clinical_verdict ? JSON.stringify(clinical_verdict) : null
           ]
         );
         persist();
@@ -334,6 +357,9 @@ app.post("/api/esp32/data", (req, res) => {
         bpm, spo2, temp, fall_detected, ecg_array: ecg_downsampled, timestamp:ts,
         hrv_rmssd, st_deviation_mv, breathing_rate, stress_index,
         r_peak_interval_ms: r_peak_interval, ai_health_score,
+        clinical_verdict,
+        simulation_active: simulationActive,
+        simulation_type: simulationType,
       });
 
       if (fall_detected && TELEGRAM_BOT_TOKEN && now-lastTwilioTime >= 600000) {
@@ -355,12 +381,197 @@ app.post("/api/esp32/data", (req, res) => {
   }
 });
 
+// ---------- MIT-BIH Simulation Endpoints ----------
+app.post("/api/esp32/simulate-start", (req, res) => {
+  try {
+    const { type } = req.body;
+    if (!type || !mitBihSamples[type]) {
+      return res.status(400).json({ error: `Invalid type. Available: ${Object.keys(mitBihSamples).join(", ")}` });
+    }
+
+    // Stop any existing simulation
+    if (simulationInterval) {
+      clearInterval(simulationInterval);
+      simulationInterval = null;
+    }
+
+    simulationActive = true;
+    simulationType = type;
+    const sample = mitBihSamples[type];
+    const ecgData = sample.ecg_array || [];
+    const irData = sample.ir_array || [];
+    const redData = sample.red_array || [];
+    const temp = sample.temp || 36.7;
+    const chunkSize = 125; // 125 samples = 0.5 seconds at 250 Hz
+    const ppgChunkSize = 12; // ~0.5 seconds at 25 Hz
+    let ecgOffset = 0;
+    let ppgOffset = 0;
+
+    console.log(`[SIM] Starting MIT-BIH simulation: ${type} (${ecgData.length} ECG samples)`);
+
+    // Reset the rolling buffer so it fills with simulation data
+    ecgRollingBuffer = [];
+
+    simulationInterval = setInterval(() => {
+      // Extract ECG chunk (loop around when reaching end)
+      const ecgChunk = [];
+      for (let i = 0; i < chunkSize; i++) {
+        ecgChunk.push(ecgData[(ecgOffset + i) % ecgData.length]);
+      }
+      ecgOffset = (ecgOffset + chunkSize) % ecgData.length;
+
+      // Extract PPG chunk
+      const irChunk = [];
+      const redChunk = [];
+      for (let i = 0; i < ppgChunkSize; i++) {
+        irChunk.push(irData[(ppgOffset + i) % irData.length]);
+        redChunk.push(redData[(ppgOffset + i) % redData.length]);
+      }
+      ppgOffset = (ppgOffset + ppgChunkSize) % irData.length;
+
+      // Inject into the existing ESP32 pipeline by making an internal HTTP call
+      const payload = JSON.stringify({
+        temp,
+        fall_detected: false,
+        ecg_array: ecgChunk,
+        ir_array: irChunk,
+        red_array: redChunk,
+        sample_rate: 250
+      });
+
+      const internalReq = http.request(
+        { hostname: "localhost", port: PORT, path: "/api/esp32/data", method: "POST",
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+          timeout: 5000 },
+        () => {} // Ignore response
+      );
+      internalReq.on("error", (err) => console.error("[SIM] Internal post error:", err.message));
+      internalReq.write(payload);
+      internalReq.end();
+    }, 500); // Every 500ms = 125 samples at 250 Hz = real-time
+
+    res.json({ ok: true, message: `Simulation started: ${type}`, available_types: Object.keys(mitBihSamples) });
+  } catch (err) {
+    console.error("[SIM] Start error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/esp32/simulate-stop", (req, res) => {
+  try {
+    if (simulationInterval) {
+      clearInterval(simulationInterval);
+      simulationInterval = null;
+    }
+    simulationActive = false;
+    simulationType = null;
+    ecgRollingBuffer = [];
+    console.log("[SIM] Simulation stopped");
+    io.emit("simulation_stopped");
+    res.json({ ok: true, message: "Simulation stopped" });
+  } catch (err) {
+    console.error("[SIM] Stop error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/esp32/simulate-status", (req, res) => {
+  res.json({
+    active: simulationActive,
+    type: simulationType,
+    available_types: Object.keys(mitBihSamples)
+  });
+});
+
+app.post("/api/ecg-records/create-demo", async (req, res) => {
+  try {
+    const { type } = req.body;
+    if (!type || !mitBihSamples[type]) {
+      return res.status(400).json({ error: `Invalid type. Available: ${Object.keys(mitBihSamples).join(", ")}` });
+    }
+
+    const sample = mitBihSamples[type];
+    const ecgData = sample.ecg_array || [];
+    const db = await getDb();
+
+    // Compute clinical metrics via DSP
+    let bpm = sample.bpm || 72;
+    let hrv_rmssd = null;
+    let st_deviation_mv = null;
+    let breathing_rate = null;
+    let r_peak_interval_ms = null;
+    let clinical_verdict = null;
+
+    const dspResult = await callDSP({
+      ecg_array: ecgData,
+      ir_array: sample.ir_array || [],
+      red_array: sample.red_array || [],
+      temp: sample.temp || 36.7,
+      current_bpm: 0,
+      fall_detected: false,
+      sample_rate: 250,
+      simulation_mode: true
+    });
+
+    if (dspResult) {
+      if (typeof dspResult.bpm === "number" && dspResult.bpm > 0) bpm = dspResult.bpm;
+      if (typeof dspResult.hrv_rmssd === "number") hrv_rmssd = dspResult.hrv_rmssd;
+      if (typeof dspResult.st_deviation_mv === "number") st_deviation_mv = dspResult.st_deviation_mv;
+      if (typeof dspResult.breathing_rate === "number") breathing_rate = dspResult.breathing_rate;
+      if (typeof dspResult.r_peak_interval_ms === "number") r_peak_interval_ms = dspResult.r_peak_interval_ms;
+      if (dspResult.clinical_verdict) clinical_verdict = dspResult.clinical_verdict;
+    }
+
+    // Label map for human-friendly naming
+    const labelMap = {
+      normal: "Normal Sinus Rhythm",
+      bradycardia: "Sinus Bradycardia",
+      tachycardia: "Sinus Tachycardia",
+      arrhythmia: "Ventricular Arrhythmia (PVCs)",
+      ischemia: "Myocardial Ischemia / STEMI",
+      noisy: "Noisy ECG (Filtered)"
+    };
+
+    db.run(
+      "INSERT INTO ecg_sessions(waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms,clinical_verdict) VALUES(?,?,?,?,?,?,?,?,?)",
+      [
+        JSON.stringify(ecgData),
+        "",  // Leave ai_summary empty so user can trigger AI analysis
+        new Date().toISOString(),
+        bpm,
+        hrv_rmssd,
+        st_deviation_mv,
+        breathing_rate,
+        r_peak_interval_ms,
+        clinical_verdict ? JSON.stringify(clinical_verdict) : null
+      ]
+    );
+    persist();
+    io.emit("ecg_session");
+
+    console.log(`[SIM] Created demo ECG record: ${type} (${labelMap[type] || type})`);
+    res.json({
+      ok: true,
+      message: `Demo record created: ${labelMap[type] || type}`,
+      type,
+      bpm,
+      hrv_rmssd,
+      st_deviation_mv,
+      breathing_rate,
+      r_peak_interval_ms
+    });
+  } catch (err) {
+    console.error("[SIM] Create demo error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------- Phase 3: GET ECG Records ----------
 app.get("/api/ecg-records", async (_req, res) => {
   try {
     const db = await getDb();
     const rows = db.exec(
-      "SELECT id,waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms FROM ecg_sessions ORDER BY id DESC",
+      "SELECT id,waveform_data,ai_summary,timestamp,bpm,hrv_rmssd,st_deviation_mv,breathing_rate,r_peak_interval_ms,clinical_verdict FROM ecg_sessions ORDER BY id DESC",
     );
     if (!rows.length || !rows[0].values.length) return res.json([]);
     const records = rows[0].values.map((r) => {
@@ -379,6 +590,7 @@ app.get("/api/ecg-records", async (_req, res) => {
         st_deviation_mv: r[6],
         breathing_rate: r[7],
         r_peak_interval_ms: r[8],
+        clinical_verdict: r[9] ? JSON.parse(r[9]) : null,
       };
     });
     res.json(records);
@@ -493,7 +705,78 @@ STRICT RESPONSE RULES:
 });
 
 // ---------- Phase 3: On-Demand ECG AI Analysis ----------
-app.post("/api/analyze-ecg",async(req,res)=>{try{const{id}=req.body;if(!id)return res.status(400).json({error:"Missing id"});const db=await getDb();const rows=db.exec("SELECT waveform_data,ai_summary,timestamp FROM ecg_sessions WHERE id="+parseInt(id));if(!rows.length||!rows[0].values.length)return res.status(404).json({error:"Session not found"});const targetSummary=rows[0].values[0][1];if(targetSummary&&targetSummary.trim()!=="")return res.json({summary:targetSummary});const targetTs=rows[0].values[0][2];const windowRows=db.exec(`SELECT waveform_data FROM ecg_sessions WHERE datetime(timestamp)<=datetime('${targetTs}') AND datetime(timestamp)>=datetime('${targetTs}','-10 minutes') ORDER BY timestamp ASC`);let allData=[];if(windowRows.length&&windowRows[0].values.length){windowRows[0].values.forEach(r=>{const wf=JSON.parse(r[0]||"[]");allData=allData.concat(wf);});}let compressed=[];for(let i=0;i<allData.length;i+=10)compressed.push(allData[i]);let summary="AI summary unavailable.";if(geminiModel){const prompt=`Analyze this 10-minute historical cardiac window. Give a concise, structured clinical summary in exactly this Markdown format:\n\n### 💓 Heart Rhythm & Rate Analysis\n* **Rhythm:** [description of rhythm]\n* **Rate:** [description of heart rate trends]\n\n### 🔍 Key Diagnostic Observations\n* [observation 1]\n* [observation 2]\n\n### 🩺 Clinical Guidance\n* [actionable clinical advice]\n\nDo not include any other conversational text or intro/outro sentences. Just output the structured sections exactly. Data: ${JSON.stringify(compressed)}`;const aiRes=await geminiModel.generateContent(prompt);summary=aiRes.response.text();}db.run("UPDATE ecg_sessions SET ai_summary=? WHERE id=?",[summary,id]);persist();res.json({summary});}catch(err){console.error("[ANALYZE] Error:",err);res.status(500).json({error:err.message});}});
+app.post("/api/analyze-ecg", async (req, res) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "Missing id" });
+
+    const db = await getDb();
+    const rows = db.exec("SELECT waveform_data, ai_summary, timestamp, bpm, hrv_rmssd, st_deviation_mv, clinical_verdict FROM ecg_sessions WHERE id=" + parseInt(id));
+    if (!rows.length || !rows[0].values.length) return res.status(404).json({ error: "Session not found" });
+
+    const row = rows[0].values[0];
+    const targetSummary = row[1];
+    if (targetSummary && targetSummary.trim() !== "") return res.json({ summary: targetSummary });
+
+    const targetTs = row[2];
+    const bpm = row[3];
+    const hrv_rmssd = row[4];
+    const st_deviation_mv = row[5];
+    const clinical_verdict_str = row[6];
+
+    const windowRows = db.exec(`SELECT waveform_data FROM ecg_sessions WHERE datetime(timestamp)<=datetime('${targetTs}') AND datetime(timestamp)>=datetime('${targetTs}','-10 minutes') ORDER BY timestamp ASC`);
+    let allData = [];
+    if (windowRows.length && windowRows[0].values.length) {
+      windowRows[0].values.forEach(r => {
+        const wf = JSON.parse(r[0] || "[]");
+        allData = allData.concat(wf);
+      });
+    }
+
+    let compressed = [];
+    for (let i = 0; i < allData.length; i += 10) {
+      compressed.push(allData[i]);
+    }
+
+    let dspInfo = `BPM: ${bpm || "Unknown"}, HRV (RMSSD): ${hrv_rmssd != null ? hrv_rmssd + " ms" : "Unknown"}, ST Segment Deviation: ${st_deviation_mv != null ? st_deviation_mv + " mV" : "Unknown"}.`;
+    if (clinical_verdict_str) {
+      try {
+        const cv = JSON.parse(clinical_verdict_str);
+        dspInfo += ` DSP Clinical Verdict: ${cv.condition} (Severity: ${cv.severity}). Findings: ${cv.findings.join("; ")}`;
+      } catch (e) {}
+    }
+
+    let summary = "AI summary unavailable.";
+    if (geminiModel) {
+      const prompt = `Analyze this 10-minute historical cardiac window.
+DSP Clinical Metrics and Findings: ${dspInfo}
+Give a concise, structured clinical summary in exactly this Markdown format:
+
+### 💓 Heart Rhythm & Rate Analysis
+* **Rhythm:** [description of rhythm]
+* **Rate:** [description of heart rate trends]
+
+### 🔍 Key Diagnostic Observations
+* [observation 1]
+* [observation 2]
+
+### 🩺 Clinical Guidance
+* [actionable clinical advice]
+
+Do not include any other conversational text or intro/outro sentences. Just output the structured sections exactly. Data: ${JSON.stringify(compressed)}`;
+
+      const aiRes = await geminiModel.generateContent(prompt);
+      summary = aiRes.response.text();
+    }
+
+    db.run("UPDATE ecg_sessions SET ai_summary=? WHERE id=?", [summary, id]);
+    persist();
+    res.json({ summary });
+  } catch (err) {
+    console.error("[ANALYZE] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ---------- Phase 3: GET Diary Summary ----------
 app.get("/api/diary/summary", async (req, res) => {

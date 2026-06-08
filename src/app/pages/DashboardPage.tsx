@@ -2,8 +2,8 @@ import {ShirtStatusBar} from "../components/ShirtStatusBar";
 import {DailyCheckIn} from "../components/DailyCheckIn";
 import {ECGCanvas} from "../components/ECGCanvas";
 import {VitalsRow} from "../components/VitalsRow";
+import {AISummaryCard} from "../components/AISummaryCard";
 
-import {HealthSummaryCard} from "../components/HealthSummaryCard";
 import {MapPanel} from "../components/MapPanel";
 import {FamilyCircle} from "../components/FamilyCircle";
 import {useLiveVitals} from "../components/useBackend";
@@ -27,7 +27,7 @@ return(
 )}
 <ShirtStatusBar/>
 <DailyCheckIn/>
-<HealthSummaryCard/>
+<AISummaryCard/>
 <ECGCanvas/>
 <VitalsRow/>
 

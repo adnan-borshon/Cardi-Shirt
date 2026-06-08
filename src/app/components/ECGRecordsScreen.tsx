@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import {
   Search, Share2, Download, FileText, Play, Pause,
   ZoomIn, ZoomOut, ToggleLeft, ToggleRight, Heart, Activity,
-  Clock, Sparkles, Copy, X, Loader2
+  Clock, Sparkles, Copy, X, Loader2, Beaker, ChevronDown
 } from "lucide-react";
 import { useTokens } from "./ThemeContext";
 import { useECGRecords, API_URL } from "./useBackend";
@@ -79,6 +79,68 @@ function renderMarkdown(md: string, tk: any) {
   });
 }
 
+function getLocalClinicalVerdict(bpm: number | null | undefined, st_mv: number | null | undefined, hrv_rmssd: number | null | undefined) {
+  const findings: string[] = [];
+  let condition = "Normal Sinus Rhythm";
+  let severity: "normal" | "warning" | "critical" = "normal";
+
+  if (st_mv !== null && st_mv !== undefined) {
+    if (st_mv > 0.20) {
+      condition = "Possible Acute Myocardial Injury / STEMI";
+      severity = "critical";
+      findings.push(`ST-Elevation of ${st_mv > 0 ? '+' : ''}${st_mv.toFixed(3)} mV exceeds +0.20 mV threshold`);
+      findings.push("Consistent with acute transmural ischemia or infarction");
+      findings.push("Immediate clinical correlation and 12-lead ECG recommended");
+    } else if (st_mv > 0.10) {
+      condition = "ST-Elevation (Borderline)";
+      severity = "warning";
+      findings.push(`Borderline ST-Elevation of ${st_mv > 0 ? '+' : ''}${st_mv.toFixed(3)} mV`);
+    } else if (st_mv < -0.10) {
+      condition = "Possible Myocardial Ischemia (ST-Depression)";
+      severity = "critical";
+      findings.push(`ST-Depression of ${st_mv.toFixed(3)} mV below -0.10 mV threshold`);
+      findings.push("Consistent with subendocardial ischemia");
+    } else if (st_mv < -0.05) {
+      severity = "warning";
+      findings.push(`Minor ST-Depression of ${st_mv.toFixed(3)} mV`);
+    }
+  }
+
+  if (bpm && bpm > 0) {
+    if (bpm > 100) {
+      if (severity === "normal") {
+        condition = "Sinus Tachycardia";
+        severity = "warning";
+      }
+      findings.push(`Elevated heart rate of ${Math.round(bpm)} BPM (>100 BPM threshold)`);
+    } else if (bpm < 50) {
+      if (severity === "normal") {
+        condition = "Sinus Bradycardia";
+        severity = "warning";
+      }
+      findings.push(`Low heart rate of ${Math.round(bpm)} BPM (<50 BPM threshold)`);
+    } else {
+      findings.push(`Heart rate of ${Math.round(bpm)} BPM within normal range (50-100)`);
+    }
+  }
+
+  if (hrv_rmssd !== null && hrv_rmssd !== undefined) {
+    if (hrv_rmssd < 15) {
+      findings.push(`Very low HRV (RMSSD=${Math.round(hrv_rmssd)}ms) — reduced parasympathetic tone`);
+    } else if (hrv_rmssd < 25) {
+      findings.push(`Low HRV (RMSSD=${Math.round(hrv_rmssd)}ms)`);
+    } else if (hrv_rmssd > 100) {
+      findings.push(`High HRV (RMSSD=${Math.round(hrv_rmssd)}ms)`);
+    }
+  }
+
+  if (findings.length === 0) {
+    findings.push("All parameters within normal limits");
+  }
+
+  return { condition, severity, findings };
+}
+
 export function ECGRecordsScreen() {
   const tk = useTokens();
   const { records: backendRecords, loading: backendLoading, refetch } = useECGRecords();
@@ -92,6 +154,30 @@ export function ECGRecordsScreen() {
   const [playing, setPlaying] = useState(false);
   const [doctorNote, setDoctorNote] = useState("");
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
+
+  const [showDemoDropdown, setShowDemoDropdown] = useState(false);
+  const [generatingDemo, setGeneratingDemo] = useState(false);
+
+  const handleGenerateDemo = async (type: string) => {
+    setGeneratingDemo(true);
+    setShowDemoDropdown(false);
+    try {
+      const res = await fetch(`${API_URL}/api/ecg-records/create-demo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type })
+      });
+      if (res.ok) {
+        await refetch();
+      } else {
+        alert("Failed to generate demo record.");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGeneratingDemo(false);
+    }
+  };
 
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const offsetRef = useRef(0);
@@ -132,6 +218,7 @@ export function ECGRecordsScreen() {
           st_deviation_mv: r.st_deviation_mv,
           breathing_rate: r.breathing_rate,
           r_peak_interval_ms: r.r_peak_interval_ms,
+          clinical_verdict: r.clinical_verdict,
         };
       })
       .filter(s => {
@@ -188,6 +275,26 @@ export function ECGRecordsScreen() {
     if (!printWindow) {
       alert("Please allow popups to export the report.");
       return;
+    }
+
+    const verdict = selectedSession.clinical_verdict || getLocalClinicalVerdict(selectedSession.bpm, selectedSession.st_deviation_mv, selectedSession.hrv_rmssd);
+    let verdictHtml = "";
+    if (verdict) {
+      const severityColor = verdict.severity === "critical" ? "#E8304A" : verdict.severity === "warning" ? "#F5A623" : "#27C28A";
+      verdictHtml = `
+        <div class="report-section">
+          <h2>Clinical Diagnosis Verdict</h2>
+          <div style="background: #F7FAFC; border: 1.5px solid ${severityColor}40; border-left: 5px solid ${severityColor}; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 16px; font-weight: 700; color: ${severityColor}; font-family: sans-serif;">${verdict.condition}</span>
+              <span style="font-size: 11px; font-weight: 700; color: ${severityColor}; text-transform: uppercase; background: ${severityColor}15; padding: 3px 8px; border-radius: 12px; font-family: monospace;">${verdict.severity}</span>
+            </div>
+            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #4A5568; line-height: 1.6;">
+              ${verdict.findings.map((f: string) => `<li>${f}</li>`).join("")}
+            </ul>
+          </div>
+        </div>
+      `;
     }
 
     const waveform = selectedSession._waveform || [];
@@ -429,6 +536,8 @@ export function ECGRecordsScreen() {
 
           ${svgContent}
 
+          ${verdictHtml}
+
           <div class="report-section">
             <h2>Clinical AI Summary</h2>
             <div class="summary-content">
@@ -661,6 +770,52 @@ export function ECGRecordsScreen() {
               </button>
             ))}
           </div>
+
+          {/* Generate Demo Records Section */}
+          <div className="relative">
+            <button
+              onClick={() => setShowDemoDropdown(!showDemoDropdown)}
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg border text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg, #9B8EC4 0%, #7C6EB0 100%)",
+                borderColor: tk.cardBorder,
+                fontFamily: "Syne, sans-serif",
+                fontSize: 11,
+                fontWeight: 600
+              }}
+              disabled={generatingDemo}
+            >
+              <div className="flex items-center gap-1.5">
+                {generatingDemo ? <Loader2 size={12} className="animate-spin" /> : <Beaker size={12} />}
+                <span>{generatingDemo ? "Generating..." : "Generate Demo"}</span>
+              </div>
+              <ChevronDown size={12} style={{ transform: showDemoDropdown ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
+            </button>
+
+            {showDemoDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 z-20 rounded-lg shadow-xl overflow-hidden border" style={{ background: tk.cardBg, borderColor: tk.cardBorder }}>
+                {[
+                  { key: "normal", label: "Normal Sinus", color: "#27C28A" },
+                  { key: "bradycardia", label: "Bradycardia", color: "#5B8AF0" },
+                  { key: "tachycardia", label: "Tachycardia", color: "#F5A623" },
+                  { key: "arrhythmia", label: "PVC Arrhythmia", color: "#E8304A" },
+                  { key: "ischemia", label: "STEMI / Ischemia", color: "#E8304A" },
+                  { key: "noisy", label: "Noisy ECG", color: "#9B8EC4" }
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => handleGenerateDemo(item.key)}
+                    className="w-full text-left px-3 py-2 text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-between"
+                    style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif" }}
+                  >
+                    <span>{item.label}</span>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: item.color }} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* Scrollable list */}
@@ -794,6 +949,60 @@ export function ECGRecordsScreen() {
 
           {/* Detailed clinical summary, notes, and comparison metrics */}
           <div className="flex-shrink-0 p-4 space-y-4" style={{ background: tk.pageBg }}>
+
+            {/* Clinical Diagnosis Verdict Block */}
+            {(() => {
+              const verdict = selectedSession.clinical_verdict || getLocalClinicalVerdict(selectedSession.bpm, selectedSession.st_deviation_mv, selectedSession.hrv_rmssd);
+              if (!verdict) return null;
+              const severityColor = verdict.severity === "critical" ? "#E8304A" : verdict.severity === "warning" ? "#F5A623" : "#27C28A";
+              return (
+                <div className="rounded-xl p-4 transition-all" style={{
+                  background: tk.cardBg,
+                  border: `1.5px solid ${
+                    verdict.severity === "critical" ? "rgba(232, 48, 74, 0.3)" :
+                    verdict.severity === "warning" ? "rgba(245, 166, 35, 0.3)" :
+                    "rgba(39, 194, 138, 0.3)"
+                  }`,
+                  borderLeft: `5px solid ${severityColor}`,
+                  boxShadow: tk.shadow
+                }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Heart size={16} style={{ color: severityColor }} />
+                      <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 13, fontWeight: 600 }}>
+                        Clinical Diagnosis Verdict
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full" style={{
+                      background: `${severityColor}15`,
+                      color: severityColor,
+                      fontFamily: "DM Mono, monospace",
+                      fontSize: 10,
+                      fontWeight: 600
+                    }}>
+                      {verdict.severity.toUpperCase()}
+                    </span>
+                  </div>
+                  <div style={{
+                    color: severityColor,
+                    fontFamily: "Syne, sans-serif",
+                    fontSize: 15,
+                    fontWeight: 700,
+                    marginBottom: 10
+                  }}>
+                    {verdict.condition}
+                  </div>
+                  <div className="space-y-1.5" style={{ borderTop: `0.5px solid ${tk.cardBorder}`, paddingTop: 10 }}>
+                    {verdict.findings.map((finding: string, idx: number) => (
+                      <div key={idx} className="flex items-start gap-2 text-[11.5px]" style={{ color: tk.textSecondary, fontFamily: "Inter, sans-serif", lineHeight: 1.5 }}>
+                        <span style={{ color: severityColor }}>•</span>
+                        <span>{finding}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             
             {/* AI Summary Block */}
             <div className="rounded-xl p-4" style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, boxShadow: tk.shadow }}>

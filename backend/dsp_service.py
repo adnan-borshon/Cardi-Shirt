@@ -226,6 +226,107 @@ def calculate_ai_health_score(bpm, spo2, temp, hrv_rmssd, st_mv):
     return max(0, min(100, round(score)))
 
 
+# ── STEP 10: CARDIAC DISEASE / ARRHYTHMIA DETECTION ──────────────────────────
+# Uses clinical metrics to classify the cardiac condition.
+# Based on MIT-BIH Arrhythmia Database annotation standards.
+# Returns a structured verdict with condition name, severity, and findings list.
+def detect_cardiac_condition(r_peaks, bpm, st_mv, hrv_rmssd, fs=ECG_SAMPLE_RATE):
+    """
+    Classifies the cardiac condition based on computed clinical metrics.
+    Priority order: Ischemia > Arrhythmia > Tachycardia > Bradycardia > Normal.
+    """
+    findings = []
+    condition = "Normal Sinus Rhythm"
+    severity = "normal"  # normal | warning | critical
+
+    # --- ST Segment Analysis (Ischemia / STEMI) ---
+    if st_mv is not None:
+        if st_mv > 0.20:
+            condition = "Possible Acute Myocardial Injury / STEMI"
+            severity = "critical"
+            findings.append(f"ST-Elevation of {st_mv:+.3f} mV exceeds +0.20 mV threshold")
+            findings.append("Consistent with acute transmural ischemia or infarction")
+            findings.append("Immediate clinical correlation and 12-lead ECG recommended")
+        elif st_mv > 0.10:
+            if severity != "critical":
+                condition = "ST-Elevation (Borderline)"
+                severity = "warning"
+            findings.append(f"Borderline ST-Elevation of {st_mv:+.3f} mV")
+        elif st_mv < -0.10:
+            condition = "Possible Myocardial Ischemia (ST-Depression)"
+            severity = "critical"
+            findings.append(f"ST-Depression of {st_mv:+.3f} mV below -0.10 mV threshold")
+            findings.append("Consistent with subendocardial ischemia")
+        elif st_mv < -0.05:
+            if severity == "normal":
+                severity = "warning"
+            findings.append(f"Minor ST-Depression of {st_mv:+.3f} mV")
+
+    # --- PVC / Arrhythmia Detection via R-R interval analysis ---
+    if r_peaks is not None and len(r_peaks) >= 4:
+        ms_per_sample = 1000.0 / fs
+        rr_intervals = [(r_peaks[i+1] - r_peaks[i]) * ms_per_sample
+                        for i in range(len(r_peaks) - 1)]
+        median_rr = float(np.median(rr_intervals))
+
+        # Detect premature beats: short R-R followed by long compensatory pause
+        pvc_count = 0
+        for i in range(len(rr_intervals) - 1):
+            short_beat = rr_intervals[i] < median_rr * 0.75
+            long_pause = rr_intervals[i + 1] > median_rr * 1.20
+            if short_beat and long_pause:
+                pvc_count += 1
+
+        if pvc_count >= 2:
+            condition = "Ventricular Arrhythmia / Premature Ventricular Contractions"
+            severity = "critical"
+            findings.append(f"{pvc_count} ectopic beats detected (premature + compensatory pause pattern)")
+            findings.append("Irregular R-R intervals consistent with ventricular ectopy")
+        elif pvc_count == 1:
+            if severity == "normal":
+                severity = "warning"
+            findings.append("Single premature ventricular contraction detected")
+
+        # SDNN check for general rhythm irregularity
+        if len(rr_intervals) >= 3:
+            sdnn = float(np.std(rr_intervals))
+            if sdnn > 100:
+                findings.append(f"High R-R variability (SDNN={sdnn:.0f}ms) — irregular rhythm")
+
+    # --- Rate-based conditions ---
+    if bpm > 0:
+        if bpm > 100:
+            if severity == "normal":
+                condition = "Sinus Tachycardia"
+                severity = "warning"
+            findings.append(f"Elevated heart rate of {bpm} BPM (>100 BPM threshold)")
+        elif bpm < 50:
+            if severity == "normal":
+                condition = "Sinus Bradycardia"
+                severity = "warning"
+            findings.append(f"Low heart rate of {bpm} BPM (<50 BPM threshold)")
+        else:
+            findings.append(f"Heart rate of {bpm} BPM within normal range (50-100)")
+
+    # --- HRV Analysis ---
+    if hrv_rmssd is not None:
+        if hrv_rmssd < 15:
+            findings.append(f"Very low HRV (RMSSD={hrv_rmssd:.1f}ms) — reduced parasympathetic tone")
+        elif hrv_rmssd < 25:
+            findings.append(f"Low HRV (RMSSD={hrv_rmssd:.1f}ms)")
+        elif hrv_rmssd > 100:
+            findings.append(f"High HRV (RMSSD={hrv_rmssd:.1f}ms)")
+
+    if not findings:
+        findings.append("All parameters within normal limits")
+
+    return {
+        "condition": condition,
+        "severity": severity,
+        "findings": findings
+    }
+
+
 # ── MAIN ENDPOINT ─────────────────────────────────────────────────────────────
 def stabilize_bpm(bpm, fall_detected=False, temp=0.0):
     if bpm <= 0:
@@ -257,7 +358,8 @@ def analyze():
 
     Response (JSON):
       bpm, spo2, hrv_rmssd, st_deviation_mv,
-      breathing_rate, stress_index, r_peak_interval_ms, ai_health_score
+      breathing_rate, stress_index, r_peak_interval_ms, ai_health_score,
+      clinical_verdict: { condition, severity, findings[] }
     """
     data     = request.get_json(force=True)
     ecg_raw  = data.get("ecg_array", [])
@@ -269,19 +371,24 @@ def analyze():
     fs       = float(data.get("sample_rate", ECG_SAMPLE_RATE))
     ms_per_sample = 1000.0 / fs
 
+    simulation_mode = bool(data.get("simulation_mode", False))
+
     result = dict(bpm=fb_bpm, spo2=0, hrv_rmssd=None, st_deviation_mv=None,
                   breathing_rate=None, stress_index=None,
-                  r_peak_interval_ms=None, ai_health_score=None)
+                  r_peak_interval_ms=None, ai_health_score=None,
+                  clinical_verdict=None)
 
     # SpO2 — always compute from PPG
     if ir_arr and red_arr:
         result["spo2"] = calculate_spo2_quadratic(ir_arr, red_arr)
 
     # ECG — requires at least 2 seconds of data (500 samples at fs Hz)
+    detected_peaks = []
     if len(ecg_raw) >= fs * 2:
         ecg   = np.array(ecg_raw, dtype=float)
         filt  = bandpass_filter_ecg(ecg, fs=fs)
         peaks = detect_r_peaks(filt, fs=fs)
+        detected_peaks = peaks
 
         if len(peaks) >= 2:
             bpm = calculate_bpm_from_rpeaks(peaks, ms_per_sample=ms_per_sample)
@@ -294,8 +401,15 @@ def analyze():
             result["stress_index"]    = calculate_stress_index(peaks, fs=fs)
             result["r_peak_interval_ms"] = round((peaks[-1]-peaks[-2])*ms_per_sample, 1)
 
-    # Apply heart rate stabilization
-    result["bpm"] = stabilize_bpm(result["bpm"], fall_detected=fall_det, temp=temp)
+    # Apply heart rate stabilization — skip during simulation to show true clinical values
+    if not simulation_mode:
+        result["bpm"] = stabilize_bpm(result["bpm"], fall_detected=fall_det, temp=temp)
+
+    # Clinical Disease / Arrhythmia Detection (Step 10)
+    result["clinical_verdict"] = detect_cardiac_condition(
+        detected_peaks, result["bpm"], result["st_deviation_mv"],
+        result["hrv_rmssd"], fs=fs
+    )
 
     result["ai_health_score"] = calculate_ai_health_score(
         result["bpm"], result["spo2"], temp,

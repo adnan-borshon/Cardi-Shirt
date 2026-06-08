@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ChevronDown, Radio } from "lucide-react";
+import { ChevronDown, Radio, Beaker, Square, Loader2, AlertTriangle, HeartPulse, ChevronRight } from "lucide-react";
 import { useTokens } from "./ThemeContext";
-import { useLiveVitals } from "./useBackend";
+import { useLiveVitals, API_URL } from "./useBackend";
 
 // Base ECG template for Lead II (most prominent)
 const ECG_TEMPLATE_LEAD_II = [
@@ -48,6 +48,35 @@ export function ECGCanvas() {
   const [lead, setLead] = useState<"Lead I" | "Lead II" | "Lead III">("Lead II");
   const [speed, setSpeed] = useState("25mm/s");
   const [showLeadDropdown, setShowLeadDropdown] = useState(false);
+  const [showSimPanel, setShowSimPanel] = useState(false);
+  const [simLoading, setSimLoading] = useState<string | null>(null);
+
+  const SIM_CASES = [
+    { key: "normal", label: "Normal Sinus", desc: "72 BPM — Healthy rhythm", color: "#27C28A" },
+    { key: "bradycardia", label: "Bradycardia", desc: "45 BPM — Slow heart rate", color: "#5B8AF0" },
+    { key: "tachycardia", label: "Tachycardia", desc: "125 BPM — Fast heart rate", color: "#F5A623" },
+    { key: "arrhythmia", label: "PVC Arrhythmia", desc: "Premature ventricular contractions", color: "#E8304A" },
+    { key: "ischemia", label: "STEMI / Ischemia", desc: "ST-Elevation myocardial injury", color: "#E8304A" },
+    { key: "noisy", label: "Noisy Signal", desc: "50Hz interference + baseline wander", color: "#9B8EC4" },
+  ];
+
+  const handleStartSim = async (type: string) => {
+    setSimLoading(type);
+    try {
+      await fetch(`${API_URL}/api/esp32/simulate-start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type })
+      });
+    } catch (e) { console.error(e); }
+    finally { setSimLoading(null); }
+  };
+
+  const handleStopSim = async () => {
+    try {
+      await fetch(`${API_URL}/api/esp32/simulate-stop`, { method: "POST" });
+    } catch (e) { console.error(e); }
+  };
 
   const tk = useTokens();
   const tkRef = useRef(tk);
@@ -290,7 +319,10 @@ export function ECGCanvas() {
 
   // Dynamic status text for UI
   const getStatusDisplay = () => {
-    if (!isActiveConnection) {
+    const isSimulation = vitals?.simulation_active;
+    const verdict = vitals?.clinical_verdict;
+
+    if (!isActiveConnection && !isSimulation) {
       return {
         text: "Offline - Shirt Disconnected",
         bg: "rgba(107, 116, 153, 0.1)",
@@ -298,6 +330,19 @@ export function ECGCanvas() {
         pulse: false
       };
     }
+
+    // If we have a clinical verdict from DSP, display that
+    if (verdict && verdict.condition !== "Normal Sinus Rhythm") {
+      const sevColor = verdict.severity === "critical" ? "#E8304A" : verdict.severity === "warning" ? "#F5A623" : "#27C28A";
+      const bpm = vitals?.bpm ?? 0;
+      return {
+        text: `${verdict.condition}${bpm > 0 ? ` — ${bpm} BPM` : ""}`,
+        bg: `${sevColor}15`,
+        color: sevColor,
+        pulse: true
+      };
+    }
+
     const bpm = vitals?.bpm ?? 0;
     if (bpm === 0) {
       return {
@@ -386,33 +431,127 @@ export function ECGCanvas() {
       {/* Canvas Wrap with Overlay */}
       <div className="relative w-full overflow-hidden" style={{ height: 220, background: tk.ecgBg }}>
         <canvas ref={canvasRef} className="w-full h-full" />
-        
-        {/* Hardware Disconnected Blur Overlay */}
-        {!isActiveConnection && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center backdrop-blur-[1.5px] bg-black/35 transition-all duration-500">
-            <div className="px-5 py-4 rounded-xl border border-red-500/20 bg-black/75 text-center max-w-[300px] shadow-2xl animate-fade-in">
-              <div className="flex items-center justify-center gap-2 text-red-500 font-semibold text-sm tracking-wider uppercase">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                Device Disconnected
-              </div>
-              <div className="text-gray-400 text-[11px] mt-2 font-mono leading-relaxed">
-                Awaiting real-time ESP32 bluetooth/WiFi sensor ingestion. Check hardware power status.
-              </div>
+         {/* Simulation Active Banner on Canvas */}
+      {vitals?.simulation_active && (
+        <div className="absolute top-2 left-2 right-2 z-10 flex items-center justify-between">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: "rgba(155, 142, 196, 0.9)", backdropFilter: "blur(8px)" }}>
+            <Beaker size={12} style={{ color: "#fff" }} />
+            <span style={{ color: "#fff", fontFamily: "DM Mono, monospace", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Simulation: {vitals.simulation_type?.replace(/_/g, " ") || "active"}
+            </span>
+          </div>
+          <button
+            onClick={handleStopSim}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
+            style={{ background: "rgba(232, 48, 74, 0.9)", backdropFilter: "blur(8px)" }}
+          >
+            <Square size={10} fill="#fff" style={{ color: "#fff" }} />
+            <span style={{ color: "#fff", fontFamily: "DM Mono, monospace", fontSize: 10, fontWeight: 600 }}>Stop</span>
+          </button>
+        </div>
+      )}
+
+      {/* Hardware Disconnected Blur Overlay */}
+      {!isActiveConnection && !vitals?.simulation_active && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center backdrop-blur-[1.5px] bg-black/35 transition-all duration-500">
+          <div className="px-5 py-4 rounded-xl border border-red-500/20 bg-black/75 text-center max-w-[300px] shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-center gap-2 text-red-500 font-semibold text-sm tracking-wider uppercase">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              Device Disconnected
+            </div>
+            <div className="text-gray-400 text-[11px] mt-2 font-mono leading-relaxed">
+              Awaiting real-time ESP32 bluetooth/WiFi sensor ingestion. Check hardware power status.
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
 
       <div className="grid grid-cols-3 gap-px" style={{ background: tk.borderSubtle }}>
         {miniLeads.map((ml, i) => (
           <div key={ml} className="px-3 py-2 relative" style={{ background: tk.ecgBg }}>
             <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, display: "block", marginBottom: 2 }}>{ml}</span>
             <canvas ref={miniCanvasRefs[i]} className="w-full" style={{ height: 40 }} />
-            {!isActiveConnection && (
+            {!isActiveConnection && !vitals?.simulation_active && (
               <div className="absolute inset-0 bg-black/10 backdrop-blur-[0.5px]" />
             )}
           </div>
         ))}
+      </div>
+
+      {/* Clinical Verdict Banner */}
+      {vitals?.clinical_verdict && vitals.clinical_verdict.severity !== "normal" && (
+        <div className="px-4 py-2.5 flex items-start gap-2.5" style={{
+          background: vitals.clinical_verdict.severity === "critical" ? "rgba(232, 48, 74, 0.08)" : "rgba(245, 166, 35, 0.08)",
+          borderTop: `1px solid ${vitals.clinical_verdict.severity === "critical" ? "rgba(232, 48, 74, 0.2)" : "rgba(245, 166, 35, 0.2)"}`
+        }}>
+          <AlertTriangle size={14} style={{ color: vitals.clinical_verdict.severity === "critical" ? "#E8304A" : "#F5A623", flexShrink: 0, marginTop: 2 }} />
+          <div className="flex-1 min-w-0">
+            <div style={{
+              color: vitals.clinical_verdict.severity === "critical" ? "#E8304A" : "#F5A623",
+              fontFamily: "Syne, sans-serif", fontSize: 11, fontWeight: 600
+            }}>
+              {vitals.clinical_verdict.condition}
+            </div>
+            <div style={{ color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 9, marginTop: 2, lineHeight: 1.5 }}>
+              {vitals.clinical_verdict.findings.slice(0, 2).join(" • ")}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MIT-BIH Simulation Panel */}
+      <div style={{ borderTop: `0.5px solid ${tk.cardBorder}` }}>
+        <button
+          onClick={() => setShowSimPanel(!showSimPanel)}
+          className="w-full flex items-center justify-between px-4 py-2.5 transition-colors hover:bg-black/3 dark:hover:bg-white/3"
+          style={{ background: tk.cardBg }}
+        >
+          <div className="flex items-center gap-2">
+            <Beaker size={14} style={{ color: "#9B8EC4" }} />
+            <span style={{ color: tk.textSecondary, fontFamily: "Syne, sans-serif", fontSize: 12, fontWeight: 500 }}>
+              MIT-BIH Clinical Simulation
+            </span>
+            <span className="px-1.5 py-0.5 rounded-full" style={{ background: "rgba(155, 142, 196, 0.12)", color: "#9B8EC4", fontFamily: "DM Mono, monospace", fontSize: 9 }}>
+              6 cases
+            </span>
+          </div>
+          <ChevronRight size={14} style={{ color: tk.textMuted, transform: showSimPanel ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
+        </button>
+
+        {showSimPanel && (
+          <div className="px-4 pb-4 pt-1 grid grid-cols-2 sm:grid-cols-3 gap-2" style={{ background: tk.cardBg }}>
+            {SIM_CASES.map((sc) => {
+              const isActive = vitals?.simulation_active && vitals?.simulation_type === sc.key;
+              const isLoading = simLoading === sc.key;
+              return (
+                <button
+                  key={sc.key}
+                  disabled={isLoading}
+                  onClick={() => isActive ? handleStopSim() : handleStartSim(sc.key)}
+                  className="relative text-left p-3 rounded-lg border transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                  style={{
+                    background: isActive ? `${sc.color}12` : tk.inputBg,
+                    borderColor: isActive ? `${sc.color}40` : tk.cardBorder,
+                  }}
+                >
+                  {isActive && (
+                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full animate-pulse" style={{ background: sc.color, boxShadow: `0 0 8px ${sc.color}` }} />
+                  )}
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <HeartPulse size={12} style={{ color: sc.color }} />
+                    <span style={{ color: isActive ? sc.color : tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 11, fontWeight: 600 }}>
+                      {sc.label}
+                    </span>
+                  </div>
+                  <div style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 9, lineHeight: 1.4 }}>
+                    {isLoading ? "Starting..." : isActive ? "Running — Click to stop" : sc.desc}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
