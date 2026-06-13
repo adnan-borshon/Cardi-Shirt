@@ -8,7 +8,7 @@ import {
   TestTube, Navigation, User
 } from "lucide-react";
 import { PieChart, Pie, Cell } from "recharts";
-import { useTheme, useTokens } from "./ThemeContext";
+import { useTheme, useTokens, useSharedLocalStorage } from "./ThemeContext";
 import { useLiveVitals, API_URL } from "./useBackend";
 import { useFamily, Member } from "./FamilyContext";
 
@@ -639,6 +639,13 @@ export function FamilyCircleScreen() {
   const [editingPerms, setEditingPerms] = useState<string | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
   const [tabletTab, setTabletTab] = useState<"family" | "status">("family");
+  const [firstName] = useSharedLocalStorage("cs_first_name", "Adnan");
+  const [lastName] = useSharedLocalStorage("cs_last_name", "Uddin");
+  const [phone] = useSharedLocalStorage("cs_phone", "+880 1712-345678");
+  const [dob] = useSharedLocalStorage("cs_dob", "15/03/1964");
+  const [bloodType] = useSharedLocalStorage("cs_blood_type", "B+");
+  const [checkedConditions] = useSharedLocalStorage<boolean[]>("cs_conditions", [true, false, true, false, false]);
+  const { vitals } = useLiveVitals();
 
 
 
@@ -742,11 +749,37 @@ export function FamilyCircleScreen() {
                     const member = members.find(m => m.id === id);
                     if (!member) return;
                     showToast(`Sending Telegram call alert to family for ${member.name}...`);
+                    
+                    const conditionsList = ["Hypertension", "Diabetes", "Previous cardiac event", "Pacemaker", "Other"];
+                    const medicalConditions = checkedConditions
+                      ? conditionsList.filter((_, idx) => checkedConditions[idx])
+                      : ["Hypertension", "Previous cardiac event"];
+
+                    const patientInfo = {
+                      firstName,
+                      lastName,
+                      phone,
+                      dob,
+                      bloodType,
+                      conditions: medicalConditions,
+                      vitals: vitals ? {
+                        bpm: vitals.bpm,
+                        spo2: vitals.spo2,
+                        temp: vitals.temp,
+                        hrv: vitals.hrv_rmssd,
+                        breathingRate: vitals.breathing_rate,
+                        stressIndex: vitals.stress_index
+                      } : null
+                    };
+
                     try {
                       await fetch(API_URL + "/api/telegram/call", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ targetName: member.name })
+                        body: JSON.stringify({ 
+                          targetName: member.name,
+                          patientInfo
+                        })
                       });
                     } catch(e) { console.error(e); }
                   }}

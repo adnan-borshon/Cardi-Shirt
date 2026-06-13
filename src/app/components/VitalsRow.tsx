@@ -35,6 +35,7 @@ export function VitalsRow() {
 
   const lastProcessedTimestampRef = useRef<string>( "");
   const isInitializedRef = useRef(false);
+  const prevFingerPlacedRef = useRef<boolean | undefined>(undefined);
 
   useEffect(() => {
     if (vitals && !isInitializedRef.current) {
@@ -76,26 +77,43 @@ export function VitalsRow() {
       const updateHistory = (
         val: number | null | undefined,
         setter: React.Dispatch<React.SetStateAction<number[]>>,
-        allowZero = false
+        allowZero = false,
+        maxLen = 5
       ) => {
         if (val !== null && val !== undefined && !isNaN(val) && (allowZero || val !== 0)) {
           setter((prev) => {
             const next = [...prev, val];
-            if (next.length > 5) return next.slice(-5);
+            if (next.length > maxLen) return next.slice(-maxLen);
             return next;
           });
         }
       };
 
       const fingerPlaced = vitals.finger_placed !== false;
+      const prevFingerPlaced = prevFingerPlacedRef.current;
+
+      if (prevFingerPlaced === undefined) {
+        prevFingerPlacedRef.current = fingerPlaced;
+      } else if (fingerPlaced && prevFingerPlaced === false) {
+        prevFingerPlacedRef.current = true;
+        // Clear PPG-dependent histories so they start a fresh 20-30s calculation window
+        setBpmHistory([]);
+        setSpo2History([]);
+        setAiHistory([]);
+        setHrvHistory([]);
+        setSiHistory([]);
+        setBrHistory([]);
+      } else if (!fingerPlaced && prevFingerPlaced === true) {
+        prevFingerPlacedRef.current = false;
+      }
 
       if (fingerPlaced) {
-        updateHistory(vitals.bpm, setBpmHistory);
-        updateHistory(vitals.spo2, setSpo2History);
-        updateHistory(vitals.ai_health_score, setAiHistory);
-        updateHistory(vitals.hrv_rmssd, setHrvHistory);
-        updateHistory(vitals.stress_index, setSiHistory);
-        updateHistory(vitals.breathing_rate, setBrHistory);
+        updateHistory(vitals.bpm, setBpmHistory, false, 15);
+        updateHistory(vitals.spo2, setSpo2History, false, 15);
+        updateHistory(vitals.ai_health_score, setAiHistory, false, 15);
+        updateHistory(vitals.hrv_rmssd, setHrvHistory, false, 15);
+        updateHistory(vitals.stress_index, setSiHistory, false, 15);
+        updateHistory(vitals.breathing_rate, setBrHistory, false, 15);
       }
 
       updateHistory(vitals.temp, setTempHistory);
@@ -114,6 +132,7 @@ export function VitalsRow() {
       setRPeakHistory((prev) => (prev.length > 0 ? [] : prev));
       lastProcessedTimestampRef.current = "";
       isInitializedRef.current = false;
+      prevFingerPlacedRef.current = undefined;
     }
   }, [vitals, isActive]);
 
@@ -153,15 +172,33 @@ export function VitalsRow() {
       };
     }
     if (isPpgDependent && vitals && vitals.finger_placed === false) {
+      const fallbackValue = label === "Heart Rate" ? vitals.bpm : label === "SpO2" ? vitals.spo2 : label === "AI Health Score" ? vitals.ai_health_score : label === "HRV (RMSSD)" ? vitals.hrv_rmssd : label === "Stress Index" ? vitals.stress_index : null;
+      const displayOrFallback = displayVal !== "0" && displayVal !== "—" && displayVal !== "" && displayVal !== null 
+        ? displayVal 
+        : fallbackValue !== null && fallbackValue !== undefined && fallbackValue !== 0 
+        ? String(Math.round(fallbackValue)) 
+        : "—";
       return {
         label,
-        value: displayVal,
+        value: displayOrFallback,
         unit,
         icon,
         accent: "#9AA0B8",
         trendLabel: "No Finger",
         detail: "Showing last valid reading",
         isCalibrating: false,
+      };
+    }
+    if (isPpgDependent && vitals && vitals.finger_placed !== false && historyLen < 10) {
+      return {
+        label,
+        value: "Calc...",
+        unit: "",
+        icon,
+        accent: "#5B8AF0",
+        trendLabel: "Calculating...",
+        detail: `Calibrating (${historyLen}/10)...`,
+        isCalibrating: true,
       };
     }
     if (historyLen === 0) {

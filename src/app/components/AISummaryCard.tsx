@@ -19,101 +19,287 @@ function parseInlineStyles(text: string, tk: any) {
   });
 }
 
+function parseAndStyleVitals(text: string, tk: any) {
+  if (!text) return "";
+  const parts = text.split("**");
+  return parts.map((part, idx) => {
+    if (idx % 2 === 1) {
+      // It's bold text. Let's analyze it and style it dynamically!
+      let color = tk.textPrimary;
+      let fontWeight = 700;
+      
+      const lower = part.toLowerCase();
+      
+      // 1. SpO2 / Oxygen
+      if (lower.includes("%")) {
+        const match = part.match(/(\d+)/);
+        if (match) {
+          const val = parseInt(match[1]);
+          if (val < 90) color = "#E8304A"; // critical red
+          else if (val < 95) color = "#F5A623"; // warning orange
+          else color = "#27C28A"; // normal green
+        }
+      }
+      // 2. Heart Rate / BPM
+      else if (lower.includes("bpm")) {
+        const match = part.match(/(\d+)/);
+        if (match) {
+          const val = parseInt(match[1]);
+          if (val > 120 || val < 50) color = "#E8304A";
+          else if (val > 100) color = "#F5A623";
+          else color = "#27C28A";
+        }
+      }
+      // 3. Temperature
+      else if (lower.includes("°c") || (lower.includes("c") && lower.match(/\d/))) {
+        const match = part.match(/(\d+(\.\d+)?)/);
+        if (match) {
+          const val = parseFloat(match[1]);
+          if (val > 38.0 || val < 35.0) color = "#E8304A";
+          else color = "#27C28A";
+        }
+      }
+      // 4. ST Deviation / mV
+      else if (lower.includes("mv")) {
+        const match = part.match(/(-?\d+(\.\d+)?)/);
+        if (match) {
+          const val = parseFloat(match[1]);
+          if (val > 0.2 || val < -0.1) color = "#E8304A";
+          else if (val > 0.1 || val < -0.05) color = "#F5A623";
+          else color = "#27C28A";
+        }
+      }
+      // 5. General status words
+      else if (lower.includes("normal") || lower.includes("stable") || lower.includes("healthy") || lower.includes("optimal") || lower.includes("excellent")) {
+        color = "#27C28A";
+      }
+      else if (lower.includes("warning") || lower.includes("elevated") || lower.includes("moderately") || lower.includes("slightly")) {
+        color = "#F5A623";
+      }
+      else if (lower.includes("critical") || lower.includes("anomaly") || lower.includes("anomalies") || lower.includes("danger") || lower.includes("low") || lower.includes("high") || lower.includes("immediate") || lower.includes("disconnected") || lower.includes("alert")) {
+        color = "#E8304A";
+      }
+
+      return (
+        <strong key={idx} style={{ color, fontWeight }}>
+          {part}
+        </strong>
+      );
+    }
+    
+    return part;
+  });
+}
+
+function renderSummaryMarkdown(md: string, tk: any) {
+  if (!md) return null;
+  const lines = md.split("\n");
+  return lines.map((line, idx) => {
+    const l = line.trim();
+    if (!l) return <div key={idx} className="h-1.5" />;
+    
+    // Headings (e.g. ### Title)
+    if (l.startsWith("### ")) {
+      const headerText = l.substring(4).trim();
+      let headerColor = tk.textPrimary;
+      
+      // Customize colors based on header icons/text
+      if (headerText.includes("Heart") || headerText.includes("💓")) {
+        headerColor = tk.cardiacRed || "#E8304A";
+      } else if (headerText.includes("Observation") || headerText.includes("🔍")) {
+        headerColor = "#5B8AF0"; // beautiful blue to match ECG screen
+      } else if (headerText.includes("Guidance") || headerText.includes("🩺")) {
+        headerColor = "#27C28A"; // green
+      }
+      
+      return (
+        <h3 
+          key={idx} 
+          style={{ 
+            color: headerColor, 
+            fontFamily: "Syne, sans-serif", 
+            fontSize: 13, 
+            fontWeight: 700, 
+            marginTop: 12, 
+            marginBottom: 6,
+            display: "flex",
+            alignItems: "center",
+            gap: "6px"
+          }}
+        >
+          {headerText}
+        </h3>
+      );
+    }
+    
+    // Lists (e.g. * Item or - Item)
+    if (l.startsWith("* ") || l.startsWith("- ")) {
+      const bulletContent = l.substring(2).trim();
+      return (
+        <div 
+          key={idx} 
+          style={{ 
+            fontFamily: "Inter, sans-serif", 
+            fontSize: 12, 
+            color: tk.textSecondary, 
+            marginLeft: 12, 
+            marginBottom: 4, 
+            position: "relative", 
+            paddingLeft: 10, 
+            lineHeight: 1.5 
+          }}
+        >
+          <span style={{ position: "absolute", left: 0, color: tk.textMuted }}>•</span>
+          {parseAndStyleVitals(bulletContent, tk)}
+        </div>
+      );
+    }
+    
+    // Regular paragraph
+    return (
+      <p 
+        key={idx} 
+        style={{ 
+          color: tk.textPrimary, 
+          fontFamily: "Inter, sans-serif", 
+          fontSize: 12, 
+          lineHeight: 1.55, 
+          marginBottom: 6 
+        }}
+      >
+        {parseAndStyleVitals(l, tk)}
+      </p>
+    );
+  });
+}
+
 function getRealtimeSummaryText(vitals: LiveVitals | null, connected: boolean): string {
   if (!connected) {
-    return "Your CardiShirt is currently **disconnected**. Please connect your device to view your real-time health summary.";
+    return `### 💓 Heart Rhythm & Rate Analysis
+* Your **CardiShirt** is currently **disconnected**.
+
+### 🔍 Key Diagnostic Observations
+* No live sensor data available right now.
+
+### 🩺 Clinical Guidance
+* Please connect your device and put on the shirt to begin real-time health monitoring.`;
   }
   if (!vitals || (vitals.bpm === 0 && !vitals.spo2)) {
-    return "Waiting for **CardiShirt sensor connection**. Put on the shirt and connect your device to see your real-time health analysis.";
+    return `### 💓 Heart Rhythm & Rate Analysis
+* Waiting for **CardiShirt sensor data stream**.
+
+### 🔍 Key Diagnostic Observations
+* No readings detected yet — sensor may still be warming up.
+
+### 🩺 Clinical Guidance
+* Put on the shirt and ensure the device is connected to see your real-time health analysis.`;
   }
 
   const { bpm, temp, fall_detected, spo2 = 98, hrv_rmssd = 40, st_deviation_mv, breathing_rate = 16, stress_index = 25 } = vitals;
 
   // 1. Fall Detected
   if (fall_detected) {
-    return "Alert: A **fall has been detected**. Please remain still if you are hurt. We are immediately reaching out to your emergency contacts to ensure you are safe.";
+    return `### 💓 Heart Rhythm & Rate Analysis
+* **Fall detected** — your current heart rate is **${bpm} BPM**.
+
+### 🔍 Key Diagnostic Observations
+* A fall event has been registered by the sensor.
+* Blood oxygen: **${spo2}%** · Temperature: **${temp}°C**.
+
+### 🩺 Clinical Guidance
+* Please remain still if you are hurt. Emergency contacts are being notified immediately.`;
   }
 
   // 2. High-Risk ECG (ST elevation/depression)
   if (st_deviation_mv !== undefined && st_deviation_mv !== null) {
     if (st_deviation_mv > 0.2) {
-      return "Notice: Significant **ST segment elevation** has been detected. Please sit down immediately, rest, and contact emergency assistance or your doctor.";
+      return `### 💓 Heart Rhythm & Rate Analysis
+* Significant **ST segment elevation** has been detected (${st_deviation_mv.toFixed(2)} mV).
+* Current heart rate: **${bpm} BPM**.
+
+### 🔍 Key Diagnostic Observations
+* ST elevation above **+0.20 mV** threshold — potential acute cardiac event.
+* Blood oxygen: **${spo2}%** · Temperature: **${temp}°C**.
+
+### 🩺 Clinical Guidance
+* Sit down immediately and rest. Contact emergency services or your doctor right away.`;
     }
     if (st_deviation_mv < -0.1) {
-      return "Notice: **ST segment depression** has been detected, indicating potential reduced cardiac oxygen flow. Please rest and consult your physician.";
+      return `### 💓 Heart Rhythm & Rate Analysis
+* **ST segment depression** detected (${st_deviation_mv.toFixed(2)} mV).
+* Current heart rate: **${bpm} BPM**.
+
+### 🔍 Key Diagnostic Observations
+* ST depression indicates potential reduced cardiac oxygen flow.
+* Blood oxygen: **${spo2}%** · Temperature: **${temp}°C**.
+
+### 🩺 Clinical Guidance
+* Rest and avoid physical exertion. Please consult your physician as soon as possible.`;
     }
   }
 
-  // 3. Status messages based on combinations
-  const criticalList: string[] = [];
-  const warningList: string[] = [];
-
-  // Heart Rate status
-  if (bpm > 120) {
-    criticalList.push("**high heart rate**");
-  } else if (bpm > 100) {
-    warningList.push("**slightly elevated heart rate**");
-  } else if (bpm < 50 && bpm > 0) {
-    warningList.push("**slower resting heart rate**");
-  }
-
-  // SpO2 status
-  if (spo2 !== undefined && spo2 !== null && spo2 > 0) {
-    if (spo2 < 90) {
-      criticalList.push("**low blood oxygen**");
-    } else if (spo2 < 95) {
-      warningList.push("**slightly low oxygen levels**");
-    }
-  }
-
-  // Stress Index status
-  if (stress_index !== undefined && stress_index !== null) {
-    if (stress_index > 150) {
-      criticalList.push("**high physiological stress**");
-    } else if (stress_index > 50) {
-      warningList.push("**moderate stress levels**");
-    }
-  }
-
-  // Breathing Rate status
-  if (breathing_rate !== undefined && breathing_rate !== null) {
-    if (breathing_rate > 20) {
-      warningList.push("**rapid breathing**");
-    } else if (breathing_rate < 12) {
-      warningList.push("**slow breathing**");
-    }
-  }
-
-  // Temperature status
-  if (temp > 38.0) {
-    criticalList.push("**elevated body temperature**");
-  } else if (temp > 0 && temp < 35.0) {
-    criticalList.push("**low body temperature**");
-  }
-
-  // 4. Build narrative output
-  if (criticalList.length > 0) {
-    const listText = criticalList.join(" and ");
-    return `We noticed ${listText} right now. Your current heart rate is **${bpm} BPM**, oxygen level is **${spo2}%**, and temperature is **${temp}°C**. Please sit down, rest, and try to take slow, calming breaths. We recommend letting a caregiver know how you feel.`;
-  }
-
-  if (warningList.length > 0) {
-    const listText = warningList.join(" and ");
-    return `Your heart is stable, though we notice ${listText}. Your heart rate is **${bpm} BPM**, oxygen level is **${spo2}%**, and breathing is at **${breathing_rate} breaths/min**. Consider taking a short break, getting some fresh air, or drinking water to help your body recover.`;
-  }
-
-  // 5. Normal / stable vitals
+  // 3. Build structured output based on vitals analysis
   const hour = new Date().getHours();
   let timeGreeting = "This morning";
   if (hour >= 12 && hour < 17) timeGreeting = "This afternoon";
   else if (hour >= 17 || hour < 5) timeGreeting = "This evening";
 
-  let hrvRemark = "excellent cardiovascular stability";
-  if (hrv_rmssd !== undefined && hrv_rmssd !== null && hrv_rmssd > 45) {
-    hrvRemark = "high heart rate variability, which is a great sign of recovery";
+  // HR status
+  let hrStatus = `Your heart rate is **${bpm} BPM** — within the normal resting range.`;
+  let hrSeverity = "normal";
+  if (bpm > 120) { hrStatus = `Your heart rate is **${bpm} BPM** — significantly elevated (tachycardia).`; hrSeverity = "critical"; }
+  else if (bpm > 100) { hrStatus = `Your heart rate is **${bpm} BPM** — slightly elevated.`; hrSeverity = "warning"; }
+  else if (bpm < 50 && bpm > 0) { hrStatus = `Your heart rate is **${bpm} BPM** — slower than usual (bradycardia).`; hrSeverity = "warning"; }
+
+  // Rhythm
+  let rhythmNote = hrSeverity === "normal" ? "Rhythm appears **Normal Sinus Rhythm** — no irregularities detected." : "Rhythm shows signs of deviation — please monitor closely.";
+
+  // HRV
+  let hrvNote = `HRV (RMSSD): **${hrv_rmssd} ms** — suggests a healthy level of cardiac adaptability.`;
+  if (hrv_rmssd > 45) hrvNote = `HRV (RMSSD): **${hrv_rmssd} ms** — excellent cardiovascular recovery indicator.`;
+  else if (hrv_rmssd < 20) hrvNote = `HRV (RMSSD): **${hrv_rmssd} ms** — low variability, may indicate stress or fatigue.`;
+
+  // SpO2
+  let spo2Note = `Blood oxygen (SpO2): **${spo2}%** — within healthy range.`;
+  if (spo2 < 90) spo2Note = `Blood oxygen (SpO2): **${spo2}%** — critically **low**. Seek immediate medical attention.`;
+  else if (spo2 < 95) spo2Note = `Blood oxygen (SpO2): **${spo2}%** — slightly **low**. Monitor closely and rest.`;
+
+  // Temperature
+  let tempNote = `Body temperature: **${temp}°C** — normal.`;
+  if (temp > 38.0) tempNote = `Body temperature: **${temp}°C** — elevated, possible fever.`;
+  else if (temp > 0 && temp < 35.0) tempNote = `Body temperature: **${temp}°C** — **low** (hypothermia risk).`;
+
+  // Breathing
+  let breathNote = `Breathing rate: **${breathing_rate} breaths/min** — steady and normal.`;
+  if (breathing_rate > 20) breathNote = `Breathing rate: **${breathing_rate} breaths/min** — slightly rapid.`;
+  else if (breathing_rate < 12) breathNote = `Breathing rate: **${breathing_rate} breaths/min** — slower than typical.`;
+
+  // ST deviation note
+  let stNote = "";
+  if (st_deviation_mv !== undefined && st_deviation_mv !== null) {
+    stNote = `\n* ST deviation: **${st_deviation_mv > 0 ? "+" : ""}${st_deviation_mv.toFixed(2)} mV** — within acceptable physiological range.`;
   }
 
-  return `${timeGreeting}, your heart rate is steady and calm at **${bpm} BPM**, indicating ${hrvRemark}. With an optimal blood oxygen level of **${spo2}%**, steady breathing at **${breathing_rate} breaths/min**, and low physiological stress (index: **${stress_index}**), your body is in a healthy, restorative rhythm.`;
+  // Guidance
+  let guidance = `${timeGreeting} your vitals look **stable**. Keep up the good habits — stay hydrated and rest well.`;
+  if (hrSeverity === "critical" || spo2 < 90) {
+    guidance = "Some readings require attention. Please **rest immediately** and contact a caregiver or healthcare provider.";
+  } else if (hrSeverity === "warning" || spo2 < 95) {
+    guidance = "A few readings are slightly outside normal range. Take a short break, drink water, and try to relax.";
+  }
+
+  return `### 💓 Heart Rhythm & Rate Analysis
+* ${hrStatus}
+* ${rhythmNote}
+
+### 🔍 Key Diagnostic Observations
+* ${spo2Note}
+* ${tempNote}
+* ${breathNote}
+* ${hrvNote}${stNote}
+
+### 🩺 Clinical Guidance
+* ${guidance}`;
 }
 
 export function AISummaryCard() {
@@ -127,6 +313,7 @@ export function AISummaryCard() {
   const lastUpdatedRef = useRef<number>(0);
 
   const [liveAiSummary, setLiveAiSummary] = useState<string>("");
+  const [aiClinicalVerdict, setAiClinicalVerdict] = useState<any | null>(null);
   const [generatingLive, setGeneratingLive] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
 
@@ -145,6 +332,7 @@ export function AISummaryCard() {
       const data = await res.json();
       if (data.summary) {
         setLiveAiSummary(data.summary);
+        setAiClinicalVerdict(data.clinical_verdict || null);
       } else {
         throw new Error("No summary returned");
       }
@@ -159,11 +347,13 @@ export function AISummaryCard() {
   useEffect(() => {
     if (!connected) {
       setLiveAiSummary("");
+      setAiClinicalVerdict(null);
     }
   }, [connected]);
 
   useEffect(() => {
     setLiveAiSummary("");
+    setAiClinicalVerdict(null);
   }, [vitals?.simulation_type, vitals?.simulation_active]);
 
   // 1. Maintain sliding window of vitals for smoothing
@@ -257,16 +447,17 @@ export function AISummaryCard() {
   // 2. Throttled update of summary narrative text, with immediate bypass for critical events
   const hasData = !!(vitals && vitals.bpm > 0);
 
-  // 2. Manage static state-based placeholder text
+  // 2. Manage static state-based placeholder text — uses structured markdown
   useEffect(() => {
     if (!connected) {
-      setDisplaySummary("Your CardiShirt is currently **disconnected**. Please connect your device and put on the shirt to view your live health summary.");
+      setDisplaySummary(getRealtimeSummaryText(null, false));
     } else if (!hasData) {
-      setDisplaySummary("Awaiting **CardiShirt sensor data stream**. Put on the shirt and connect your device to see your real-time health analysis.");
+      setDisplaySummary(getRealtimeSummaryText(null, true));
     } else {
-      setDisplaySummary("Your CardiShirt is connected and streaming. Click the **Ask CardiShirt AI** button below to analyze your live vitals and generate a custom heart health summary.");
+      // Use averaged vitals for a stable, smoothed summary
+      setDisplaySummary(getRealtimeSummaryText(averagedVitals || vitals, true));
     }
-  }, [connected, hasData]);
+  }, [connected, hasData, averagedVitals, vitals]);
 
   const time = vitals ? new Date(vitals.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Live";
 
@@ -292,18 +483,9 @@ export function AISummaryCard() {
         <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, marginLeft: "auto" }}>{time}</span>
       </div>
 
-      {liveAiSummary && (
-        <div className="flex items-center gap-1.5 mb-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
-          <span style={{ color: "#a855f7", fontSize: 10, fontFamily: "DM Mono, monospace", fontWeight: 600, letterSpacing: "0.05em" }}>
-            GEMINI AI ANALYSIS
-          </span>
-        </div>
-      )}
-
-      <p style={{ color: tk.textPrimary, fontFamily: "'DM Serif Display', serif", fontSize: 16, lineHeight: 1.65, letterSpacing: "0.01em" }}>
-        {liveAiSummary ? parseInlineStyles(liveAiSummary, tk) : parseInlineStyles(displaySummary, tk)}
-      </p>
+      <div style={{ marginTop: 8, marginBottom: 8 }}>
+        {liveAiSummary ? renderSummaryMarkdown(liveAiSummary, tk) : renderSummaryMarkdown(displaySummary, tk)}
+      </div>
 
       {errorMsg && (
         <div style={{ color: tk.cardiacRed, fontSize: 11, marginTop: 4, fontFamily: "Syne, sans-serif" }}>
@@ -345,7 +527,10 @@ export function AISummaryCard() {
           
           {liveAiSummary && (
             <button
-              onClick={() => setLiveAiSummary("")}
+              onClick={() => {
+                setLiveAiSummary("");
+                setAiClinicalVerdict(null);
+              }}
               className="px-3 py-1.5 rounded-lg transition-all duration-300 hover:bg-black/5 dark:hover:bg-white/5"
               style={{
                 color: tk.textSecondary,
@@ -427,23 +612,23 @@ export function AISummaryCard() {
         </div>
       )}
 
-      {/* MIT-BIH Clinical Diagnostic Verdict Section */}
-      {hasData && (
+      {/* MIT-BIH Clinical Diagnostic Verdict Section - Only displays after Ask CardiShirt AI button is clicked */}
+      {aiClinicalVerdict && (
         <div 
           className="mt-4 p-4 rounded-lg transition-all duration-300" 
           style={{ 
             background: isDark ? "rgba(20, 24, 40, 0.6)" : "rgba(255, 255, 255, 0.5)",
             border: `1px dashed ${
-              vitals?.clinical_verdict?.severity === "critical"
+              aiClinicalVerdict.severity === "critical"
                 ? "rgba(232, 48, 74, 0.3)"
-                : vitals?.clinical_verdict?.severity === "warning"
+                : aiClinicalVerdict.severity === "warning"
                 ? "rgba(245, 166, 35, 0.3)"
                 : "rgba(39, 194, 138, 0.2)"
             }`,
             borderLeft: `4px solid ${
-              vitals?.clinical_verdict?.severity === "critical"
+              aiClinicalVerdict.severity === "critical"
                 ? tk.cardiacRed
-                : vitals?.clinical_verdict?.severity === "warning"
+                : aiClinicalVerdict.severity === "warning"
                 ? tk.amber
                 : tk.green
             }`
@@ -460,84 +645,71 @@ export function AISummaryCard() {
               </span>
             </div>
             
-            {vitals?.clinical_verdict ? (
-              <div 
-                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"
+            <div 
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"
+              style={{ 
+                background: 
+                  aiClinicalVerdict.severity === "critical" 
+                    ? "rgba(232, 48, 74, 0.12)" 
+                    : aiClinicalVerdict.severity === "warning" 
+                    ? "rgba(245, 166, 35, 0.12)" 
+                    : "rgba(39, 194, 138, 0.12)",
+                color: 
+                  aiClinicalVerdict.severity === "critical" 
+                    ? tk.cardiacRed 
+                    : aiClinicalVerdict.severity === "warning" 
+                    ? tk.amber 
+                    : tk.green
+              }}
+            >
+              <span 
+                className={`w-1.5 h-1.5 rounded-full ${
+                  aiClinicalVerdict.severity !== "normal" ? "animate-ping animate-duration-1000" : ""
+                }`} 
                 style={{ 
                   background: 
-                    vitals.clinical_verdict.severity === "critical" 
-                      ? "rgba(232, 48, 74, 0.12)" 
-                      : vitals.clinical_verdict.severity === "warning" 
-                      ? "rgba(245, 166, 35, 0.12)" 
-                      : "rgba(39, 194, 138, 0.12)",
-                  color: 
-                    vitals.clinical_verdict.severity === "critical" 
+                    aiClinicalVerdict.severity === "critical" 
                       ? tk.cardiacRed 
-                      : vitals.clinical_verdict.severity === "warning" 
+                      : aiClinicalVerdict.severity === "warning" 
                       ? tk.amber 
-                      : tk.green
-                }}
-              >
-                <span 
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    vitals.clinical_verdict.severity !== "normal" ? "animate-ping animate-duration-1000" : ""
-                  }`} 
-                  style={{ 
-                    background: 
-                      vitals.clinical_verdict.severity === "critical" 
-                        ? tk.cardiacRed 
-                        : vitals.clinical_verdict.severity === "warning" 
-                        ? tk.amber 
-                        : tk.green 
-                  }} 
-                />
-                {vitals.clinical_verdict.severity}
-              </div>
-            ) : (
-              <div className="flex items-center gap-1" style={{ color: tk.textSecondary }}>
-                <Loader2 size={11} className="animate-spin" />
-                <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace" }}>Analyzing...</span>
-              </div>
-            )}
+                      : tk.green 
+                }} 
+              />
+              {aiClinicalVerdict.severity}
+            </div>
           </div>
 
-          {vitals?.clinical_verdict ? (
-            <div className="space-y-2">
-              <div 
-                style={{ 
-                  color: 
-                    vitals.clinical_verdict.severity === "critical" 
-                      ? tk.cardiacRed 
-                      : vitals.clinical_verdict.severity === "warning" 
-                      ? tk.amber 
-                      : tk.textPrimary,
-                  fontFamily: "Syne, sans-serif",
-                  fontSize: 14, 
-                  fontWeight: 600 
-                }}
-              >
-                {vitals.clinical_verdict.condition}
-              </div>
-              <ul className="space-y-1.5 pl-1">
-                {vitals.clinical_verdict.findings.map((finding, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-[12px] leading-relaxed" style={{ color: tk.textSecondary }}>
-                    {vitals.clinical_verdict?.severity === "critical" ? (
-                      <ShieldAlert size={13} style={{ color: tk.cardiacRed, marginTop: 2, flexShrink: 0 }} />
-                    ) : vitals.clinical_verdict?.severity === "warning" ? (
-                      <AlertCircle size={13} style={{ color: tk.amber, marginTop: 2, flexShrink: 0 }} />
-                    ) : (
-                      <CheckCircle2 size={13} style={{ color: tk.green, marginTop: 2, flexShrink: 0 }} />
-                    )}
-                    <span>{finding}</span>
-                  </li>
-                ))}
-              </ul>
+          <div className="space-y-2">
+            <div 
+              style={{ 
+                color: 
+                  aiClinicalVerdict.severity === "critical" 
+                    ? tk.cardiacRed 
+                    : aiClinicalVerdict.severity === "warning" 
+                    ? tk.amber 
+                    : tk.textPrimary,
+                fontFamily: "Syne, sans-serif",
+                fontSize: 14, 
+                fontWeight: 600 
+              }}
+            >
+              {aiClinicalVerdict.condition}
             </div>
-          ) : (
-            <div style={{ color: tk.textSecondary, fontSize: 12, fontFamily: "Syne, sans-serif" }}>
-              Awaiting standard 10-second ECG window to compile disease classification metrics.
-            </div>
-          )}
+            <ul className="space-y-1.5 pl-1">
+              {aiClinicalVerdict.findings && aiClinicalVerdict.findings.map((finding: string, idx: number) => (
+                <li key={idx} className="flex items-start gap-2 text-[12px] leading-relaxed" style={{ color: tk.textSecondary }}>
+                  {aiClinicalVerdict.severity === "critical" ? (
+                    <ShieldAlert size={13} style={{ color: tk.cardiacRed, marginTop: 2, flexShrink: 0 }} />
+                  ) : aiClinicalVerdict.severity === "warning" ? (
+                    <AlertCircle size={13} style={{ color: tk.amber, marginTop: 2, flexShrink: 0 }} />
+                  ) : (
+                    <CheckCircle2 size={13} style={{ color: tk.green, marginTop: 2, flexShrink: 0 }} />
+                  )}
+                  <span>{finding}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard, Activity, BookOpen, TrendingUp, Settings, Users, Pill,
@@ -31,13 +31,63 @@ export function Sidebar({}: SidebarProps) {
   const [lastName] = useSharedLocalStorage("cs_last_name", "Uddin");
   const [avatarInitials] = useSharedLocalStorage("cs_avatar_initials", "AU");
   const [avatarBgColor] = useSharedLocalStorage("cs_avatar_bgcolor", "#5B8AF0");
+  const [phone] = useSharedLocalStorage("cs_phone", "+880 1712-345678");
+  const [dob] = useSharedLocalStorage("cs_dob", "15/03/1964");
+  const [bloodType] = useSharedLocalStorage("cs_blood_type", "B+");
+  const [checkedConditions] = useSharedLocalStorage<boolean[]>("cs_conditions", [true, false, true, false, false]);
+
+  // Sync patient profile to backend when loaded or changed
+  useEffect(() => {
+    const conditionsList = ["Hypertension", "Diabetes", "Previous cardiac event", "Pacemaker", "Other"];
+    const medicalConditions = checkedConditions
+      ? conditionsList.filter((_, idx) => checkedConditions[idx])
+      : ["Hypertension", "Previous cardiac event"];
+
+    fetch(`${API_URL}/api/patient/update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName,
+        lastName,
+        phone,
+        dob,
+        bloodType,
+        conditions: medicalConditions
+      })
+    }).catch(err => console.error("Error updating patient profile on backend:", err));
+  }, [firstName, lastName, phone, dob, bloodType, checkedConditions]);
 
   const triggerTelegramAlert = async (endpoint: string, label: string) => {
+    const conditionsList = ["Hypertension", "Diabetes", "Previous cardiac event", "Pacemaker", "Other"];
+    const medicalConditions = checkedConditions
+      ? conditionsList.filter((_, idx) => checkedConditions[idx])
+      : ["Hypertension", "Previous cardiac event"];
+
+    const patientInfo = {
+      firstName,
+      lastName,
+      phone,
+      dob,
+      bloodType,
+      conditions: medicalConditions,
+      vitals: vitals ? {
+        bpm: vitals.bpm,
+        spo2: vitals.spo2,
+        temp: vitals.temp,
+        hrv: vitals.hrv_rmssd,
+        breathingRate: vitals.breathing_rate,
+        stressIndex: vitals.stress_index
+      } : null
+    };
+
     try {
       const res = await fetch(`${API_URL}/api/telegram/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetName: "Family Circle" })
+        body: JSON.stringify({ 
+          targetName: endpoint === "call" ? "Family Circle" : undefined,
+          patientInfo 
+        })
       });
       const data = await res.json();
       if (data.ok) {

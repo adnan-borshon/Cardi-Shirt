@@ -235,11 +235,59 @@ app.get("/api/vitals/latest", async (req, res) => {
   }
 });
 
+let latestPatientProfile = {
+  firstName: "Adnan",
+  lastName: "Uddin",
+  phone: "+880 1712-345678",
+  dob: "15/03/1964",
+  bloodType: "B+",
+  conditions: ["Hypertension", "Previous cardiac event"]
+};
+
+// ---------- Patient Profile Update ----------
+app.post("/api/patient/update", (req, res) => {
+  try {
+    const { firstName, lastName, phone, dob, bloodType, conditions } = req.body;
+    if (firstName) latestPatientProfile.firstName = firstName;
+    if (lastName) latestPatientProfile.lastName = lastName;
+    if (phone) latestPatientProfile.phone = phone;
+    if (dob) latestPatientProfile.dob = dob;
+    if (bloodType) latestPatientProfile.bloodType = bloodType;
+    if (conditions) latestPatientProfile.conditions = conditions;
+    res.json({ ok: true, latestPatientProfile });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ---------- Telegram Manual Actions ----------
 app.post("/api/telegram/call", async (req, res) => {
   try {
-    const { targetName } = req.body;
-    const msg = `☎️ <b>URGENT CALL BACK REQUESTED</b>\n\nPatient is requesting an immediate call back from <b>${targetName || 'a family member'}</b>.\nPlease call them ASAP!`;
+    const { targetName, patientInfo } = req.body;
+    if (patientInfo) {
+      latestPatientProfile = { ...latestPatientProfile, ...patientInfo };
+    }
+    const name = latestPatientProfile ? `${latestPatientProfile.firstName} ${latestPatientProfile.lastName}` : "Adnan Uddin";
+    const phone = latestPatientProfile?.phone || "+880 1712-345678";
+    const dob = latestPatientProfile?.dob || "15/03/1964";
+    const bloodType = latestPatientProfile?.bloodType || "B+";
+    
+    let vitalsInfo = "";
+    if (patientInfo?.vitals) {
+      const { bpm, spo2, temp } = patientInfo.vitals;
+      vitalsInfo = `\n<b>Current Vitals:</b>\n• Heart Rate: <b>${bpm ? bpm + ' BPM' : '—'}</b>\n• SpO2: <b>${spo2 ? spo2 + '%' : '—'}</b>\n• Temp: <b>${temp ? temp + '°C' : '—'}</b>\n`;
+    }
+
+    const msg = `☎️ <b>URGENT CALL BACK REQUESTED</b>\n\n` +
+                `Patient is requesting an immediate call back from <b>${targetName || 'a family member'}</b>.\n\n` +
+                `<b>Patient Profile:</b>\n` +
+                `• Name: <b>${name}</b>\n` +
+                `• Phone: <code>${phone}</code>\n` +
+                `• DOB: ${dob}\n` +
+                `• Blood Type: ${bloodType}\n` +
+                vitalsInfo +
+                `\nPlease call them ASAP!`;
+
     const result = await sendTelegramMessage(msg);
     res.json(result);
   } catch (err) {
@@ -249,7 +297,43 @@ app.post("/api/telegram/call", async (req, res) => {
 
 app.post("/api/telegram/dispatch", async (req, res) => {
   try {
-    const msg = `🚑 <b>CRITICAL EMERGENCY DISPATCH</b>\n\nManual emergency dispatch has been triggered from the dashboard.\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Patient Location</a>`;
+    const { patientInfo } = req.body;
+    if (patientInfo) {
+      latestPatientProfile = { ...latestPatientProfile, ...patientInfo };
+    }
+    const name = latestPatientProfile ? `${latestPatientProfile.firstName} ${latestPatientProfile.lastName}` : "Adnan Uddin";
+    const phone = latestPatientProfile?.phone || "+880 1712-345678";
+    const dob = latestPatientProfile?.dob || "15/03/1964";
+    const bloodType = latestPatientProfile?.bloodType || "B+";
+    const conditions = Array.isArray(latestPatientProfile?.conditions)
+      ? latestPatientProfile.conditions.join(", ")
+      : (latestPatientProfile?.conditions || "Hypertension, Previous cardiac event");
+    
+    let vitalsInfo = "";
+    if (patientInfo?.vitals) {
+      const { bpm, spo2, temp, hrv, breathingRate, stressIndex } = patientInfo.vitals;
+      vitalsInfo = `\n<b>Current Vitals:</b>\n` +
+                   `• Heart Rate: <b>${bpm ? bpm + ' BPM' : '—'}</b>\n` +
+                   `• SpO2: <b>${spo2 ? spo2 + '%' : '—'}</b>\n` +
+                   `• Temp: <b>${temp ? temp + '°C' : '—'}</b>\n` +
+                   `• HRV: <b>${hrv ? hrv + ' ms' : '—'}</b>\n` +
+                   `• Breathing: <b>${breathingRate ? breathingRate + ' rpm' : '—'}</b>\n` +
+                   `• Stress Index: <b>${stressIndex ? stressIndex + '/100' : '—'}</b>\n`;
+    }
+
+    const msg = `🚑 <b>CRITICAL EMERGENCY DISPATCH</b>\n\n` +
+                `Manual emergency dispatch has been triggered from the dashboard.\n\n` +
+                `<b>Patient Profile:</b>\n` +
+                `• Name: <b>${name}</b>\n` +
+                `• Phone: <code>${phone}</code>\n` +
+                `• DOB: ${dob}\n` +
+                `• Blood Type: ${bloodType}\n` +
+                `• Conditions: <i>${conditions}</i>\n` +
+                vitalsInfo +
+                `\n📍 <b>Patient Location:</b>\n` +
+                `• Coordinates: ${currentPosition.lat}, ${currentPosition.lng}\n` +
+                `• <a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">View Live Location on Google Maps</a>`;
+
     const result = await sendTelegramMessage(msg);
     res.json(result);
   } catch (err) {
@@ -343,30 +427,32 @@ app.post("/api/esp32/data", (req, res) => {
         finalEcgArray = len >= chunkLen ? dsp.ecg_filtered.slice(len - chunkLen) : dsp.ecg_filtered;
       }
 
-      console.log(`[DSP] Received from Python -> BPM: ${finalBpm}, SpO2: ${finalSpo2}%, HRV: ${hrv_rmssd || "N/A"}ms, ST Dev: ${st_deviation_mv || "N/A"}mV, Health Score: ${ai_health_score || "N/A"} | Filtered ECG (first 5): ${finalEcgArray ? finalEcgArray.slice(0, 5).map(v => v.toFixed(1)).join(", ") : "N/A"}`);
+      const logEcgStr = (Array.isArray(finalEcgArray) && finalEcgArray.length > 0)
+        ? finalEcgArray.slice(0, 5).map(v => typeof v === "number" ? v.toFixed(1) : v).join(", ")
+        : "N/A";
 
-      // Emit enriched vitals if DSP succeeded
-      if (dsp) {
-        io.emit("vitals", {
-          bpm: finalBpm,
-          spo2: finalSpo2,
-          temp,
-          fall_detected,
-          ecg_array: finalEcgArray,
-          timestamp: new Date().toISOString(),
-          hrv_rmssd: fingerPlaced ? hrv_rmssd : null,
-          st_deviation_mv,
-          breathing_rate: fingerPlaced ? breathing_rate : null,
-          stress_index: fingerPlaced ? stress_index : null,
-          r_peak_interval_ms: r_peak_interval,
-          ai_health_score: fingerPlaced ? ai_health_score : null,
-          clinical_verdict,
-          simulation_active: simulationActive,
-          simulation_type: simulationType,
-          sample_rate: sample_rate,
-          finger_placed: fingerPlaced,
-        });
-      }
+      console.log(`[DSP] Ingestion / DSP -> BPM: ${finalBpm}, SpO2: ${finalSpo2}%, HRV: ${hrv_rmssd || "N/A"}ms, ST Dev: ${st_deviation_mv || "N/A"}mV, Health Score: ${ai_health_score || "N/A"} | ECG (first 5): ${logEcgStr}`);
+
+      // Emit vitals (either enriched via Python DSP or fallback via Node)
+      io.emit("vitals", {
+        bpm: finalBpm,
+        spo2: finalSpo2,
+        temp,
+        fall_detected,
+        ecg_array: finalEcgArray,
+        timestamp: new Date().toISOString(),
+        hrv_rmssd: fingerPlaced ? hrv_rmssd : null,
+        st_deviation_mv,
+        breathing_rate: fingerPlaced ? breathing_rate : null,
+        stress_index: fingerPlaced ? stress_index : null,
+        r_peak_interval_ms: r_peak_interval,
+        ai_health_score: fingerPlaced ? ai_health_score : null,
+        clinical_verdict,
+        simulation_active: simulationActive,
+        simulation_type: simulationType,
+        sample_rate: sample_rate,
+        finger_placed: fingerPlaced,
+      });
 
       if (fingerPlaced) {
         accumulatedVitals.bpm.push(finalBpm);
@@ -445,7 +531,25 @@ app.post("/api/esp32/data", (req, res) => {
       if (fall_detected && now-lastTwilioTime >= 600000) {
         if (TELEGRAM_BOT_TOKEN) {
           try {
-            const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n<b>FALL DETECTED</b>\n<b>BPM:</b> ${finalBpm}\n<b>Temp:</b> ${temp}°C\n<a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track live location</a>`;
+            const name = latestPatientProfile ? `${latestPatientProfile.firstName} ${latestPatientProfile.lastName}` : "Adnan Uddin";
+            const pPhone = latestPatientProfile?.phone || "+880 1712-345678";
+            const blood = latestPatientProfile?.bloodType || "B+";
+            const conds = Array.isArray(latestPatientProfile?.conditions) 
+              ? latestPatientProfile.conditions.join(", ") 
+              : "Hypertension, Previous cardiac event";
+              
+            const msg = `🚨 <b>CARDISHIRT SOS</b> 🚨\n\n` +
+                        `<b>FALL DETECTED</b> for patient <b>${name}</b>.\n\n` +
+                        `<b>Patient Details:</b>\n` +
+                        `• Phone: <code>${pPhone}</code>\n` +
+                        `• Blood Type: ${blood}\n` +
+                        `• Conditions: ${conds}\n\n` +
+                        `<b>Vitals at incident:</b>\n` +
+                        `• BPM: <b>${finalBpm}</b>\n` +
+                        `• Temp: <b>${temp}°C</b>\n` +
+                        `• SpO2: <b>${finalSpo2}%</b>\n\n` +
+                        `📍 <a href="https://maps.google.com/?q=${currentPosition.lat},${currentPosition.lng}">Track Live Location on Google Maps</a>`;
+
             await sendTelegramMessage(msg);
             console.log("[SOS] Telegram alert sent");
           } catch(e) { console.error("[SOS] Telegram fail:", e); }
@@ -870,11 +974,13 @@ app.post("/api/analyze-live", async (req, res) => {
     if (!vitals) return res.status(400).json({ error: "Missing vitals data" });
 
     let summary = "AI summary unavailable.";
+    let clinical_verdict = vitals.clinical_verdict || null;
+
     if (geminiModel) {
       const cv = vitals.clinical_verdict || {};
       const findingsList = Array.isArray(cv.findings) ? cv.findings.join("; ") : "None";
       const prompt = `You are CardiShirt AI, a supportive cardiac health companion. 
-The patient (Adnan) has requested an on-demand clinical summary of their current live vitals.
+The patient (Adnan) has requested an on-demand clinical health summary of their current live vitals.
 Here are their current real-time metrics:
 - Heart Rate: ${vitals.bpm} BPM
 - Blood Oxygen (SpO2): ${vitals.spo2}%
@@ -886,18 +992,64 @@ Here are their current real-time metrics:
 - Clinical Verdict: ${cv.condition || "Normal Sinus Rhythm"} (Severity: ${cv.severity || "normal"})
 - Detailed Findings: ${findingsList}
 
-Please cross-reference these findings with annotated cardiac waveform patterns from the MIT-BIH databases (specifically QRS shapes, premature beat intervals, and ST segments) to ensure the highest clinical accuracy. However, do NOT explicitly write the words "MIT", "MIT-BIH", "database", or "dataset" in your output summary.
+Please cross-reference these findings with annotated cardiac waveform patterns from the MIT-BIH databases (specifically QRS shapes, premature beat intervals, and ST segments) to ensure the highest clinical accuracy. However, do NOT explicitly write the words "MIT", "MIT-BIH", "database", or "dataset" in your output summary or findings.
 
-Provide a professional, reassuring, and personalized clinical summary in exactly 2-3 sentences. Explain what these readings mean for their heart health right now. Address Adnan directly and warn him if there are critical anomalies. Do not use markdown headers, bold headers, or lists. Just return the raw sentences.`;
+You must respond with a JSON object containing two keys:
+1. "summary": A structured, personalized clinical health summary in simple English and in an easy-to-understand way for a normal user (avoiding complex medical jargon where possible). Address Adnan directly.
+   STRICT FORMATTING RULE: The summary must be formatted in Markdown with exactly these three sections:
+   
+   ### 💓 Heart Rhythm & Rate Analysis
+   * Describe his rhythm (e.g. **Normal Sinus Rhythm** or **Sinus Tachycardia**) and heart rate (e.g. **${vitals.bpm} BPM**). State if it is normal, elevated, or low.
+   
+   ### 🔍 Key Diagnostic Observations
+   * Explain other vital observations (like SpO2 at **${vitals.spo2}%**, Temperature at **${vitals.temp}°C**, HRV, ST segment deviation, etc.). Warn him clearly about any low/high values or abnormalities.
+   
+   ### 🩺 Clinical Guidance
+   * Provide reassuring, simple, actionable clinical guidance (e.g. rest, contact doctor, remain calm, etc.).
+   
+   CRITICAL: You MUST wrap all numerical vital values (e.g. **${vitals.bpm} BPM**, **${vitals.spo2}%**, **${vitals.temp}°C**), conditions (e.g. **Normal Sinus Rhythm**), and severity indicators (e.g. **critical**, **anomaly**, **normal**, **stable**, **low**, **high**) in double asterisks so the frontend parser can color-code and style them. Do not use HTML tags in the Markdown summary.
+   
+2. "clinical_verdict": A refined clinical verdict object based on your analysis of the data. It must follow this structure:
+   {
+     "condition": "Name of the condition (e.g. Normal Sinus Rhythm, Sinus Tachycardia, Sinus Bradycardia, Ventricular Arrhythmia, Myocardial Ischemia, etc.)",
+     "severity": "normal" or "warning" or "critical",
+     "findings": ["Finding 1", "Finding 2", ...]
+   }
 
-      const aiRes = await geminiModel.generateContent(prompt);
-      summary = aiRes.response.text().trim();
+Ensure the response is valid JSON and only the JSON object.`;
+
+      const aiRes = await geminiModel.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      });
+      const text = aiRes.response.text().trim();
+      try {
+        const parsed = JSON.parse(text);
+        summary = parsed.summary || "AI summary unavailable.";
+        clinical_verdict = parsed.clinical_verdict || vitals.clinical_verdict || null;
+      } catch (e) {
+        console.warn("[ANALYZE-LIVE] JSON parse failed, fallback to text:", e);
+        summary = text;
+        clinical_verdict = vitals.clinical_verdict || null;
+      }
     } else {
       const cv = vitals.clinical_verdict || {};
-      summary = `Hi Adnan, your heart rate is currently stable at ${vitals.bpm} BPM with a normal blood oxygen level of ${vitals.spo2}%. Your overall condition is flagged as ${cv.condition || "Normal Sinus Rhythm"}.`;
+      summary = `### 💓 Heart Rhythm & Rate Analysis
+* Hi Adnan, your heart rate is currently stable at **${vitals.bpm} BPM**.
+* Your overall condition is flagged as **${cv.condition || "Normal Sinus Rhythm"}**.
+
+### 🔍 Key Diagnostic Observations
+* Your blood oxygen level is **${vitals.spo2}%**.
+* Body temperature is **${vitals.temp}°C**.
+
+### 🩺 Clinical Guidance
+* Your vitals are being monitored in real-time. Please rest and let a caregiver know if you feel unwell.`;
+      clinical_verdict = cv;
     }
 
-    res.json({ summary });
+    res.json({ summary, clinical_verdict });
   } catch (err) {
     console.error("[ANALYZE-LIVE] Error:", err);
     res.status(500).json({ error: err.message });
