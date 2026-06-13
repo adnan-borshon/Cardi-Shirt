@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Mic, Sparkles, Activity } from "lucide-react";
+import { Send, Mic, Sparkles, Activity, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTokens } from "./ThemeContext";
 
@@ -45,7 +45,7 @@ const initialMessages: Message[] = [
 
 const quickPrompts = ["Is my heart okay today?", "How was my sleep last night?", "What should I avoid today?"];
 
-export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
+export function AIChat({ isMobile = false, onClose }: { isMobile?: boolean; onClose?: () => void }) {
   const [messages, setMessages] = useLocalStorage<Message[]>("cs_chat_messages", initialMessages);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -86,7 +86,7 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
   };
 
   return (
-    <div className="flex flex-col flex-1 h-full w-full" style={{ background: tk.cardBg }}>
+    <div className="flex flex-col flex-1 min-h-0 w-full" style={{ background: tk.cardBg }}>
       {/* Header */}
       <div className="px-4 py-3 flex-shrink-0" style={{ borderBottom: `0.5px solid ${tk.cardBorder}` }}>
         <div className="flex items-center justify-between mb-1">
@@ -95,11 +95,18 @@ export function AIChat({ isMobile = false }: { isMobile?: boolean }) {
             <span style={{ color: tk.textPrimary, fontFamily: "Syne, sans-serif", fontSize: 15 }}>CardiShirt AI</span>
             <div className="w-1.5 h-1.5 rounded-full bg-[#27C28A] animate-pulse" />
           </div>
-          {messages.length > initialMessages.length && (
-            <button onClick={() => { if (window.confirm("Clear chat history?")) setMessages(initialMessages); }} className="hover:underline transition-opacity" style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, background: "none", border: "none", cursor: "pointer" }}>
-              Clear Chat
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {messages.length > initialMessages.length && (
+              <button onClick={() => { if (window.confirm("Clear chat history?")) setMessages(initialMessages); }} className="hover:underline transition-opacity" style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, background: "none", border: "none", cursor: "pointer" }}>
+                Clear Chat
+              </button>
+            )}
+            {onClose && (
+              <button onClick={onClose} className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors" title="Close chat">
+                <X size={16} style={{ color: tk.textSecondary }} />
+              </button>
+            )}
+          </div>
         </div>
         <p style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10 }}>Has access to your full cardiac history</p>
         <div className="mt-1.5 px-2 py-0.5 rounded-full w-fit" style={{ background: tk.chipBg, color: tk.textSecondary, fontFamily: "DM Mono, monospace", fontSize: 9 }}>

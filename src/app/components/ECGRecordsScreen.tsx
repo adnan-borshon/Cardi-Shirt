@@ -362,8 +362,17 @@ export function ECGRecordsScreen() {
         const d = new Date(r.timestamp);
         const wf = r.waveform_data || [];
         const vals = wf.filter((v: any) => typeof v === "number");
-        const minV = vals.length ? Math.min(...vals) : 0;
-        const maxV = vals.length ? Math.max(...vals) : 0;
+        let minV = 0;
+        let maxV = 0;
+        if (vals.length > 0) {
+          minV = vals[0];
+          maxV = vals[0];
+          for (let i = 1; i < vals.length; i++) {
+            const v = vals[i];
+            if (v < minV) minV = v;
+            if (v > maxV) maxV = v;
+          }
+        }
         const durSec = Math.round(wf.length / 100);
         const durationStr = durSec >= 60 ? `${Math.floor(durSec / 60)}m ${durSec % 60}s` : `${durSec}s`;
 
@@ -491,8 +500,13 @@ export function ECGRecordsScreen() {
       if (points.length > 0) {
         const svgWidth = 1000;
         const svgHeight = 150;
-        const minVal = Math.min(...points);
-        const maxVal = Math.max(...points);
+        let minVal = points[0] ?? 0;
+        let maxVal = points[0] ?? 0;
+        for (let i = 1; i < points.length; i++) {
+          const v = points[i];
+          if (v < minVal) minVal = v;
+          if (v > maxVal) maxVal = v;
+        }
         const range = maxVal - minVal || 1;
         
         const pathD = points.map((val, idx) => {

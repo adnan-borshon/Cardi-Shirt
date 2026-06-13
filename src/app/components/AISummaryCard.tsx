@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Sparkles, ArrowRight, Loader2, Activity, ShieldAlert, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useTokens } from "./ThemeContext";
-import { useLiveVitals, LiveVitals } from "./useBackend";
+import { useLiveVitals, LiveVitals, API_URL } from "./useBackend";
 import { useNavigate } from "react-router";
 
 function parseInlineStyles(text: string, tk: any) {
@@ -126,6 +126,46 @@ export function AISummaryCard() {
   const [averagedVitals, setAveragedVitals] = useState<LiveVitals | null>(null);
   const lastUpdatedRef = useRef<number>(0);
 
+  const [liveAiSummary, setLiveAiSummary] = useState<string>("");
+  const [generatingLive, setGeneratingLive] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string>("");
+
+  const generateLiveSummary = async () => {
+    if (!connected || !vitals) return;
+    setGeneratingLive(true);
+    setErrorMsg("");
+    try {
+      const vitalsPayload = averagedVitals || vitals;
+      const res = await fetch(`${API_URL}/api/analyze-live`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vitals: vitalsPayload }),
+      });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      if (data.summary) {
+        setLiveAiSummary(data.summary);
+      } else {
+        throw new Error("No summary returned");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || "Failed to generate live summary");
+    } finally {
+      setGeneratingLive(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!connected) {
+      setLiveAiSummary("");
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    setLiveAiSummary("");
+  }, [vitals?.simulation_type, vitals?.simulation_active]);
+
   // 1. Maintain sliding window of vitals for smoothing
   useEffect(() => {
     if (!connected || !vitals) {
@@ -215,49 +255,20 @@ export function AISummaryCard() {
   }, [vitals, connected]);
 
   // 2. Throttled update of summary narrative text, with immediate bypass for critical events
+  const hasData = !!(vitals && vitals.bpm > 0);
+
+  // 2. Manage static state-based placeholder text
   useEffect(() => {
     if (!connected) {
-      setDisplaySummary(getRealtimeSummaryText(null, false));
-      lastUpdatedRef.current = 0;
-      return;
+      setDisplaySummary("Your CardiShirt is currently **disconnected**. Please connect your device and put on the shirt to view your live health summary.");
+    } else if (!hasData) {
+      setDisplaySummary("Awaiting **CardiShirt sensor data stream**. Put on the shirt and connect your device to see your real-time health analysis.");
+    } else {
+      setDisplaySummary("Your CardiShirt is connected and streaming. Click the **Ask CardiShirt AI** button below to analyze your live vitals and generate a custom heart health summary.");
     }
-    if (!vitals || (vitals.bpm === 0 && !vitals.spo2)) {
-      setDisplaySummary(getRealtimeSummaryText(vitals, true));
-      lastUpdatedRef.current = 0;
-      return;
-    }
-
-    // Check for critical/emergency events that bypass any throttle delay
-    const isCriticalBypass =
-      vitals.fall_detected ||
-      (vitals.st_deviation_mv !== undefined &&
-        vitals.st_deviation_mv !== null &&
-        (vitals.st_deviation_mv > 0.2 || vitals.st_deviation_mv < -0.1)) ||
-      vitals.bpm > 120 ||
-      (vitals.bpm < 40 && vitals.bpm > 0) ||
-      (vitals.spo2 !== undefined && vitals.spo2 !== null && vitals.spo2 > 0 && vitals.spo2 < 90);
-
-    const now = Date.now();
-    const timeSinceLastUpdate = now - lastUpdatedRef.current;
-
-    // Use averaged/smoothed vitals for the summary calculation to prevent flickering, 
-    // unless it is an active critical event in the raw vitals.
-    const vitalsToUse = isCriticalBypass ? vitals : (averagedVitals || vitals);
-
-    if (
-      isCriticalBypass ||
-      timeSinceLastUpdate >= 10000 ||
-      !displaySummary ||
-      displaySummary.startsWith("Waiting") ||
-      displaySummary.startsWith("Your CardiShirt")
-    ) {
-      setDisplaySummary(getRealtimeSummaryText(vitalsToUse, true));
-      lastUpdatedRef.current = now;
-    }
-  }, [vitals, connected, averagedVitals, displaySummary]);
+  }, [connected, hasData]);
 
   const time = vitals ? new Date(vitals.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Live";
-  const hasData = !!(vitals && vitals.bpm > 0);
 
   // Use a slightly warmer card background as requested by design briefs: a hint of deep blue rather than pure charcoal.
   // For dark mode: rgba(28, 38, 57, 0.4), for light mode: #F0F4FF or similar
@@ -281,9 +292,94 @@ export function AISummaryCard() {
         <span style={{ color: tk.textMuted, fontFamily: "DM Mono, monospace", fontSize: 10, marginLeft: "auto" }}>{time}</span>
       </div>
 
+      {liveAiSummary && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+          <span style={{ color: "#a855f7", fontSize: 10, fontFamily: "DM Mono, monospace", fontWeight: 600, letterSpacing: "0.05em" }}>
+            GEMINI AI ANALYSIS
+          </span>
+        </div>
+      )}
+
       <p style={{ color: tk.textPrimary, fontFamily: "'DM Serif Display', serif", fontSize: 16, lineHeight: 1.65, letterSpacing: "0.01em" }}>
-        {parseInlineStyles(displaySummary, tk)}
+        {liveAiSummary ? parseInlineStyles(liveAiSummary, tk) : parseInlineStyles(displaySummary, tk)}
       </p>
+
+      {errorMsg && (
+        <div style={{ color: tk.cardiacRed, fontSize: 11, marginTop: 4, fontFamily: "Syne, sans-serif" }}>
+          ⚠️ {errorMsg}
+        </div>
+      )}
+
+      {/* On-Demand Gemini AI Button */}
+      {connected && hasData && (
+        <div className="flex flex-wrap items-center gap-3 mt-3 mb-1">
+          <button
+            disabled={generatingLive}
+            onClick={generateLiveSummary}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg font-semibold transition-all duration-300 hover:scale-[1.03] active:scale-[0.97]"
+            style={{
+              background: generatingLive 
+                ? "rgba(147, 51, 234, 0.25)"
+                : "linear-gradient(135deg, #8b5cf6, #6366f1)",
+              color: "#ffffff",
+              fontFamily: "Syne, sans-serif",
+              fontSize: 11,
+              cursor: generatingLive ? "not-allowed" : "pointer",
+              border: "none",
+              boxShadow: "0 4px 12px rgba(139, 92, 246, 0.15)"
+            }}
+          >
+            {generatingLive ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                Analyzing Live Stream...
+              </>
+            ) : (
+              <>
+                <Sparkles size={13} className="animate-pulse" />
+                {liveAiSummary ? "Regenerate AI Analysis" : "Ask CardiShirt AI"}
+              </>
+            )}
+          </button>
+          
+          {liveAiSummary && (
+            <button
+              onClick={() => setLiveAiSummary("")}
+              className="px-3 py-1.5 rounded-lg transition-all duration-300 hover:bg-black/5 dark:hover:bg-white/5"
+              style={{
+                color: tk.textSecondary,
+                fontFamily: "Syne, sans-serif",
+                fontSize: 11,
+                fontWeight: 500,
+                background: "transparent",
+                border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
+              }}
+            >
+              Back to Live Feed
+            </button>
+          )}
+        </div>
+      )}
+
+      {!connected && (
+        <div className="flex items-center gap-2 mt-3 mb-1">
+          <button
+            disabled
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg font-semibold opacity-50 cursor-not-allowed"
+            style={{
+              background: "rgba(100, 100, 100, 0.15)",
+              color: tk.textMuted,
+              fontFamily: "Syne, sans-serif",
+              fontSize: 11,
+              border: "none"
+            }}
+          >
+            <Sparkles size={13} />
+            Connect Device to Ask AI
+          </button>
+        </div>
+      )}
 
       {/* Structured Stats Grid showcasing smoothed averages */}
       {hasData && averagedVitals && (

@@ -9,6 +9,8 @@ Clinically referenced algorithms:
   - SpO2: quadratic calibration curve (A - B*R + C*R^2)
 """
 import sys
+import os
+import json
 print("[DSP] Starting CardiShirt DSP Microservice...")
 print("[DSP] Loading heavy clinical ML libraries (scipy, neurokit2) - this may take 10-20 seconds on Windows...")
 sys.stdout.flush()
@@ -16,6 +18,7 @@ sys.stdout.flush()
 from flask import Flask, request, jsonify
 import numpy as np
 from scipy.signal import butter, filtfilt
+from scipy.interpolate import interp1d
 import neurokit2 as nk
 
 app = Flask(__name__)
@@ -53,6 +56,88 @@ def detect_r_peaks(ecg_filtered, fs=ECG_SAMPLE_RATE):
         return info["ECG_R_Peaks"].tolist()
     except Exception:
         return []
+
+
+# ── STEP 2.5: WAVEFORM SIMILARITY MATCHING (MIT-BIH REFERENCE) ───────────────
+TEMPLATE_QRS = {}
+
+def extract_qrs_windows(signal, r_peaks, fs=ECG_SAMPLE_RATE):
+    pre_samples = int(0.15 * fs) # 150ms before peak
+    post_samples = int(0.35 * fs) # 350ms after peak
+    windows = []
+    for r in r_peaks:
+        if r - pre_samples >= 0 and r + post_samples < len(signal):
+            win = signal[r - pre_samples : r + post_samples]
+            std = np.std(win)
+            if std > 0:
+                win_norm = (win - np.mean(win)) / std
+                windows.append(win_norm)
+    return windows
+
+def resample_signal(sig, target_len):
+    if len(sig) == target_len:
+        return sig
+    x = np.linspace(0, 1, len(sig))
+    x_new = np.linspace(0, 1, target_len)
+    f = interp1d(x, sig, kind="linear", fill_value="extrapolate")
+    return f(x_new)
+
+def calculate_waveform_similarity(ecg_filtered, r_peaks, fs=ECG_SAMPLE_RATE):
+    if not TEMPLATE_QRS or len(r_peaks) < 2 or len(ecg_filtered) < 10:
+        return {}
+    
+    pre_samples = int(0.15 * fs)
+    post_samples = int(0.35 * fs)
+    
+    live_wins = extract_qrs_windows(ecg_filtered, r_peaks, fs=fs)
+    if not live_wins:
+        return {}
+        
+    live_template = np.mean(live_wins, axis=0)
+    similarities = {}
+    
+    for key, template in TEMPLATE_QRS.items():
+        sig1 = live_template
+        sig2 = template
+        if len(sig1) != len(sig2):
+            sig2 = resample_signal(sig2, len(sig1))
+            
+        corr = np.corrcoef(sig1, sig2)[0, 1]
+        # Pearson correlation ranges from [-1, 1], map to positive percentage similarity
+        similarities[key] = max(0.0, float(corr) * 100.0)
+        
+    return similarities
+
+def build_templates():
+    global TEMPLATE_QRS
+    try:
+        samples_path = os.path.join(os.path.dirname(__file__), "mit_bih_samples.json")
+        if not os.path.exists(samples_path):
+            print("[DSP] Warning: mit_bih_samples.json not found for similarity matching.")
+            return
+            
+        with open(samples_path, "r") as f:
+            mit_samples = json.load(f)
+            
+        pre_samples = int(0.15 * ECG_SAMPLE_RATE)
+        post_samples = int(0.35 * ECG_SAMPLE_RATE)
+        
+        for key, data in mit_samples.items():
+            ecg_raw = data.get("ecg_array", [])
+            if not ecg_raw:
+                continue
+            filt = bandpass_filter_ecg(np.array(ecg_raw, dtype=float), fs=ECG_SAMPLE_RATE)
+            peaks = detect_r_peaks(filt, fs=ECG_SAMPLE_RATE)
+            if len(peaks) >= 2:
+                wins = extract_qrs_windows(filt, peaks, fs=ECG_SAMPLE_RATE)
+                if wins:
+                    TEMPLATE_QRS[key] = np.mean(wins, axis=0)
+        print(f"[DSP] Waveform templates built for similarity matching: {list(TEMPLATE_QRS.keys())}")
+    except Exception as e:
+        print(f"[DSP] Error building similarity templates: {e}")
+
+# Build the templates once at module load time
+build_templates()
 
 
 # ── STEP 3: BPM FROM R-PEAKS ─────────────────────────────────────────────────
@@ -230,7 +315,7 @@ def calculate_ai_health_score(bpm, spo2, temp, hrv_rmssd, st_mv):
 # Uses clinical metrics to classify the cardiac condition.
 # Based on MIT-BIH Arrhythmia Database annotation standards.
 # Returns a structured verdict with condition name, severity, and findings list.
-def detect_cardiac_condition(r_peaks, bpm, st_mv, hrv_rmssd, fs=ECG_SAMPLE_RATE):
+def detect_cardiac_condition(r_peaks, bpm, st_mv, hrv_rmssd, ecg_filtered=None, fs=ECG_SAMPLE_RATE):
     """
     Classifies the cardiac condition based on computed clinical metrics.
     Priority order: Ischemia > Arrhythmia > Tachycardia > Bradycardia > Normal.
@@ -317,6 +402,29 @@ def detect_cardiac_condition(r_peaks, bpm, st_mv, hrv_rmssd, fs=ECG_SAMPLE_RATE)
         elif hrv_rmssd > 100:
             findings.append(f"High HRV (RMSSD={hrv_rmssd:.1f}ms)")
 
+    # --- Waveform Similarity matching ---
+    similarities = {}
+    if ecg_filtered is not None and r_peaks is not None and len(r_peaks) >= 2:
+        similarities = calculate_waveform_similarity(ecg_filtered, r_peaks, fs=fs)
+        best_match = None
+        best_score = 0.0
+        for k, v in similarities.items():
+            if v > best_score:
+                best_score = v
+                best_match = k
+                
+        if best_match and best_score >= 80.0:
+            label_map = {
+                "normal": "Normal Sinus Rhythm",
+                "bradycardia": "Sinus Bradycardia",
+                "tachycardia": "Sinus Tachycardia",
+                "arrhythmia": "Ventricular Arrhythmia (PVCs)",
+                "ischemia": "Myocardial Ischemia / STEMI",
+                "noisy": "Noisy Signal"
+            }
+            match_name = label_map.get(best_match, best_match)
+            findings.append(f"Waveform similarity matches clinical {match_name} pattern ({best_score:.1f}%)")
+
     if not findings:
         findings.append("All parameters within normal limits")
 
@@ -372,6 +480,9 @@ def analyze():
     ms_per_sample = 1000.0 / fs
 
     simulation_mode = bool(data.get("simulation_mode", False))
+    finger_placed = bool(data.get("finger_placed", True))
+    last_valid_bpm = int(data.get("last_valid_bpm", 72))
+    last_valid_spo2 = int(data.get("last_valid_spo2", 98))
 
     result = dict(bpm=fb_bpm, spo2=0, hrv_rmssd=None, st_deviation_mv=None,
                   breathing_rate=None, stress_index=None,
@@ -379,11 +490,14 @@ def analyze():
                   clinical_verdict=None)
 
     # SpO2 — always compute from PPG
-    if ir_arr and red_arr:
+    if finger_placed and ir_arr and red_arr:
         result["spo2"] = calculate_spo2_quadratic(ir_arr, red_arr)
+    else:
+        result["spo2"] = last_valid_spo2
 
     # ECG — requires at least 2 seconds of data (500 samples at fs Hz)
     detected_peaks = []
+    filt = None
     if len(ecg_raw) >= fs * 2:
         ecg   = np.array(ecg_raw, dtype=float)
         filt  = bandpass_filter_ecg(ecg, fs=fs)
@@ -406,11 +520,16 @@ def analyze():
     if not simulation_mode:
         result["bpm"] = stabilize_bpm(result["bpm"], fall_detected=fall_det, temp=temp)
 
+    if not finger_placed:
+        result["bpm"] = last_valid_bpm
+
     # Clinical Disease / Arrhythmia Detection (Step 10)
     result["clinical_verdict"] = detect_cardiac_condition(
         detected_peaks, result["bpm"], result["st_deviation_mv"],
-        result["hrv_rmssd"], fs=fs
+        result["hrv_rmssd"], ecg_filtered=filt, fs=fs
     )
+    if filt is not None and len(detected_peaks) >= 2:
+        result["similarities"] = calculate_waveform_similarity(filt, detected_peaks, fs=fs)
 
     result["ai_health_score"] = calculate_ai_health_score(
         result["bpm"], result["spo2"], temp,

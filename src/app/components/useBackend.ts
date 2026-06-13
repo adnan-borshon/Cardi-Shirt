@@ -47,6 +47,7 @@ export interface LiveVitals {
   simulation_active?: boolean;
   simulation_type?: string | null;
   sample_rate?: number;
+  finger_placed?: boolean;
 }
 
 export interface SOSEvent{
@@ -75,6 +76,29 @@ const s=getSocket();
 const[vitals,setVitals]=useState<LiveVitals|null>(null);
 const[connected,setConnected]=useState(s.connected);
 const[sos,setSos]=useState<SOSEvent|null>(null);
+
+useEffect(() => {
+  fetch(`${API_URL}/api/vitals/latest`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data) {
+        setVitals(prev => prev ? prev : {
+          bpm: data.bpm,
+          temp: data.temp,
+          spo2: data.spo2,
+          fall_detected: false,
+          timestamp: data.timestamp,
+          hrv_rmssd: data.hrv_rmssd,
+          st_deviation_mv: data.st_deviation_mv,
+          breathing_rate: data.breathing_rate,
+          stress_index: data.stress_index,
+          ai_health_score: data.ai_health_score,
+          finger_placed: false,
+        });
+      }
+    })
+    .catch(err => console.error("[useLiveVitals] Fetch latest error:", err));
+}, []);
 
 useEffect(()=>{
 const handleConnect=()=>setConnected(true);

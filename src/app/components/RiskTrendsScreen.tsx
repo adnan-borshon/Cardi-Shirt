@@ -76,8 +76,13 @@ function RingChart({ score, color, trackColor, size = 120 }: { score: number; co
 
 function MiniSparkline({ data, color, width = 80, height = 24 }: { data: number[]; color: string; width?: number; height?: number }) {
   if (!data || data.length === 0) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  let min = data[0] ?? 0;
+  let max = data[0] ?? 0;
+  for (let i = 1; i < data.length; i++) {
+    const v = data[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
   const range = max - min || 1;
   const pts = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * height}`).join(" ");
   return (

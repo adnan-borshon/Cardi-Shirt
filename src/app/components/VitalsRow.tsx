@@ -33,7 +33,23 @@ export function VitalsRow() {
   const [stHistory, setStHistory] = useState<number[]>([]);
   const [rPeakHistory, setRPeakHistory] = useState<number[]>([]);
 
-  const lastProcessedTimestampRef = useRef<string>("");
+  const lastProcessedTimestampRef = useRef<string>( "");
+  const isInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (vitals && !isInitializedRef.current) {
+      isInitializedRef.current = true;
+      if (vitals.bpm) setBpmHistory([vitals.bpm]);
+      if (vitals.temp) setTempHistory([vitals.temp]);
+      if (vitals.spo2) setSpo2History([vitals.spo2]);
+      if (vitals.ai_health_score) setAiHistory([vitals.ai_health_score]);
+      if (vitals.hrv_rmssd) setHrvHistory([vitals.hrv_rmssd]);
+      if (vitals.breathing_rate) setBrHistory([vitals.breathing_rate]);
+      if (vitals.stress_index) setSiHistory([vitals.stress_index]);
+      if (vitals.st_deviation_mv !== undefined && vitals.st_deviation_mv !== null) setStHistory([vitals.st_deviation_mv]);
+      if (vitals.r_peak_interval_ms) setRPeakHistory([vitals.r_peak_interval_ms]);
+    }
+  }, [vitals]);
 
   useEffect(() => {
     if (vitals) {
@@ -71,13 +87,18 @@ export function VitalsRow() {
         }
       };
 
-      updateHistory(vitals.bpm, setBpmHistory);
+      const fingerPlaced = vitals.finger_placed !== false;
+
+      if (fingerPlaced) {
+        updateHistory(vitals.bpm, setBpmHistory);
+        updateHistory(vitals.spo2, setSpo2History);
+        updateHistory(vitals.ai_health_score, setAiHistory);
+        updateHistory(vitals.hrv_rmssd, setHrvHistory);
+        updateHistory(vitals.stress_index, setSiHistory);
+        updateHistory(vitals.breathing_rate, setBrHistory);
+      }
+
       updateHistory(vitals.temp, setTempHistory);
-      updateHistory(vitals.spo2, setSpo2History);
-      updateHistory(vitals.ai_health_score, setAiHistory);
-      updateHistory(vitals.hrv_rmssd, setHrvHistory);
-      updateHistory(vitals.breathing_rate, setBrHistory);
-      updateHistory(vitals.stress_index, setSiHistory);
       updateHistory(vitals.st_deviation_mv, setStHistory, true);
       updateHistory(vitals.r_peak_interval_ms, setRPeakHistory);
     } else if (!isActive) {
@@ -92,6 +113,7 @@ export function VitalsRow() {
       setStHistory((prev) => (prev.length > 0 ? [] : prev));
       setRPeakHistory((prev) => (prev.length > 0 ? [] : prev));
       lastProcessedTimestampRef.current = "";
+      isInitializedRef.current = false;
     }
   }, [vitals, isActive]);
 
@@ -115,7 +137,8 @@ export function VitalsRow() {
     normalAccent: string | (() => string),
     normalTrendLabel: string,
     normalDetail: string,
-    fallbackDetail: string
+    fallbackDetail: string,
+    isPpgDependent = false
   ) => {
     if (!isActive) {
       return {
@@ -126,6 +149,18 @@ export function VitalsRow() {
         accent: "#9AA0B8",
         trendLabel: "Offline",
         detail: fallbackDetail,
+        isCalibrating: false,
+      };
+    }
+    if (isPpgDependent && vitals && vitals.finger_placed === false) {
+      return {
+        label,
+        value: displayVal,
+        unit,
+        icon,
+        accent: "#9AA0B8",
+        trendLabel: "No Finger",
+        detail: "Showing last valid reading",
         isCalibrating: false,
       };
     }
@@ -164,7 +199,8 @@ export function VitalsRow() {
       () => (avgBpm > 100 || avgBpm < 50 ? "#E8304A" : "#27C28A"),
       "Live",
       "Averaging last 10s of data",
-      "Awaiting hardware signal"
+      "Awaiting hardware signal",
+      true
     ),
     getCardProps(
       "Body Temp",
@@ -175,7 +211,8 @@ export function VitalsRow() {
       () => (avgTemp > 37.5 || avgTemp < 35.5 ? "#E8304A" : "#27C28A"),
       "Live",
       "From shirt thermistor",
-      "Sensor offline"
+      "Sensor offline",
+      false
     ),
     getCardProps(
       "SpO2",
@@ -186,7 +223,8 @@ export function VitalsRow() {
       () => (avgSpo2 < 95 ? "#E8304A" : "#27C28A"),
       "Live",
       "Pulse Oximeter reading",
-      "Sensor offline"
+      "Sensor offline",
+      true
     ),
     getCardProps(
       "AI Health Score",
@@ -197,7 +235,8 @@ export function VitalsRow() {
       () => (avgAi === null ? "#9AA0B8" : avgAi >= 80 ? "#27C28A" : avgAi >= 50 ? "#F5A623" : "#E8304A"),
       "Dynamic",
       "Calculated by vitals check",
-      "Awaiting calibration"
+      "Awaiting calibration",
+      true
     ),
     getCardProps(
       "HRV (RMSSD)",
@@ -208,7 +247,8 @@ export function VitalsRow() {
       () => (avgHrv === null ? "#9AA0B8" : avgHrv >= 40 ? "#27C28A" : "#F5A623"),
       "Good variability",
       "RMSSD index",
-      "No active stream"
+      "No active stream",
+      true
     ),
     getCardProps(
       "Breathing Rate",
@@ -219,7 +259,8 @@ export function VitalsRow() {
       "#5B8AF0",
       "Normal",
       "ECG-amplitude derived",
-      "Sensor offline"
+      "Sensor offline",
+      false
     ),
     getCardProps(
       "Stress Index",
@@ -230,7 +271,8 @@ export function VitalsRow() {
       () => (avgSi === null ? "#9AA0B8" : avgSi < 35 ? "#27C28A" : avgSi < 70 ? "#F5A623" : "#E8304A"),
       avgSi !== null ? (avgSi < 35 ? "Low stress" : avgSi < 70 ? "Moderate stress" : "High stress") : "Offline",
       "Derived from HRV",
-      "Awaiting baseline"
+      "Awaiting baseline",
+      true
     ),
     getCardProps(
       "ST Segment",
@@ -241,7 +283,8 @@ export function VitalsRow() {
       () => (avgSt === null ? "#9AA0B8" : avgSt < -0.05 || avgSt > 0.10 ? "#E8304A" : "#27C28A"),
       "Stable range",
       "Lead II displacement",
-      "Lead offline"
+      "Lead offline",
+      false
     ),
     getCardProps(
       "R-Peak Interval",
@@ -252,7 +295,8 @@ export function VitalsRow() {
       "#5B8AF0",
       "Regular rhythm",
       "Interval consistency",
-      "Awaiting R-peaks"
+      "Awaiting R-peaks",
+      false
     ),
   ];
 

@@ -6,3 +6,9 @@ dist
 .env.*.local
 .agents/
 updates/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

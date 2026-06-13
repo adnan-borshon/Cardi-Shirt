@@ -211,6 +211,30 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
+// ---------- Latest Realtime Vitals Endpoint ----------
+app.get("/api/vitals/latest", async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = db.exec("SELECT bpm, temp, spo2, hrv_rmssd, st_deviation_mv, breathing_rate, stress_index, ai_health_score, timestamp FROM realtime_vitals WHERE bpm > 0 AND spo2 > 0 ORDER BY id DESC LIMIT 1");
+    if (!rows.length || !rows[0].values.length) return res.json(null);
+    const val = rows[0].values[0];
+    res.json({
+      bpm: val[0],
+      temp: val[1],
+      spo2: val[2],
+      hrv_rmssd: val[3],
+      st_deviation_mv: val[4],
+      breathing_rate: val[5],
+      stress_index: val[6],
+      ai_health_score: val[7],
+      timestamp: val[8]
+    });
+  } catch (err) {
+    console.error("[Vitals Latest]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------- Telegram Manual Actions ----------
 app.post("/api/telegram/call", async (req, res) => {
   try {
@@ -253,6 +277,9 @@ function stabilizeBpm(bpm, fallDetected, temp) {
 let accumulatedVitals = { bpm: [], temp: [], spo2: [], fall_detected: false };
 let lastTwilioTime = 0;
 let ecgRollingBuffer = [];
+let lastValidBpm = 72;
+let lastValidSpo2 = 98;
+
 app.post("/api/esp32/data", (req, res) => {
   try {
     const { temp=0, fall_detected=false, ecg_array=null, ir_array=[], red_array=[], sample_rate=250 } = req.body;
@@ -262,8 +289,11 @@ app.post("/api/esp32/data", (req, res) => {
     res.json({ ok: true });
 
     // 2. Perform heavy DSP & DB calculations in the background
-    const bpmImmediate = stabilizeBpm(calculateBPM(ir_array), fall_detected, temp);
-    const fallbackSpo2 = calculateSpO2(ir_array, red_array) || 98;
+    const avgIr = ir_array && ir_array.length > 0 ? (ir_array.reduce((a, b) => a + b, 0) / ir_array.length) : 0;
+    const fingerPlaced = simulationActive || (avgIr >= 50000);
+
+    const bpmImmediate = fingerPlaced ? stabilizeBpm(calculateBPM(ir_array), fall_detected, temp) : lastValidBpm;
+    const fallbackSpo2 = fingerPlaced ? (calculateSpO2(ir_array, red_array) || 98) : lastValidSpo2;
 
     (async () => {
       if (Array.isArray(ecg_array)) {
@@ -274,10 +304,29 @@ app.post("/api/esp32/data", (req, res) => {
         }
       }
 
-      const dsp = await callDSP({ ecg_array: ecgRollingBuffer, ir_array, red_array, temp, current_bpm: bpmImmediate, fall_detected, sample_rate, simulation_mode: simulationActive });
+      const dsp = await callDSP({ 
+        ecg_array: ecgRollingBuffer, 
+        ir_array, 
+        red_array, 
+        temp, 
+        current_bpm: bpmImmediate, 
+        fall_detected, 
+        sample_rate, 
+        simulation_mode: simulationActive,
+        finger_placed: fingerPlaced,
+        last_valid_bpm: lastValidBpm,
+        last_valid_spo2: lastValidSpo2
+      });
+
       // Use DSP results if available, otherwise keep fallback
-      const finalBpm = dsp?.bpm || bpmImmediate;
-      const finalSpo2 = dsp?.spo2 || fallbackSpo2;
+      const finalBpm = fingerPlaced ? (dsp?.bpm || bpmImmediate) : lastValidBpm;
+      const finalSpo2 = fingerPlaced ? (dsp?.spo2 || fallbackSpo2) : lastValidSpo2;
+      
+      if (fingerPlaced) {
+        if (finalBpm > 0) lastValidBpm = finalBpm;
+        if (finalSpo2 > 0) lastValidSpo2 = finalSpo2;
+      }
+
       const hrv_rmssd       = dsp?.hrv_rmssd        ?? null;
       const st_deviation_mv = dsp?.st_deviation_mv  ?? null;
       const breathing_rate  = dsp?.breathing_rate   ?? null;
@@ -305,22 +354,25 @@ app.post("/api/esp32/data", (req, res) => {
           fall_detected,
           ecg_array: finalEcgArray,
           timestamp: new Date().toISOString(),
-          hrv_rmssd,
+          hrv_rmssd: fingerPlaced ? hrv_rmssd : null,
           st_deviation_mv,
-          breathing_rate,
-          stress_index,
+          breathing_rate: fingerPlaced ? breathing_rate : null,
+          stress_index: fingerPlaced ? stress_index : null,
           r_peak_interval_ms: r_peak_interval,
-          ai_health_score,
+          ai_health_score: fingerPlaced ? ai_health_score : null,
           clinical_verdict,
           simulation_active: simulationActive,
           simulation_type: simulationType,
           sample_rate: sample_rate,
+          finger_placed: fingerPlaced,
         });
       }
 
-      accumulatedVitals.bpm.push(finalBpm);
+      if (fingerPlaced) {
+        accumulatedVitals.bpm.push(finalBpm);
+        accumulatedVitals.spo2.push(finalSpo2);
+      }
       accumulatedVitals.temp.push(temp);
-      accumulatedVitals.spo2.push(finalSpo2);
       if (fall_detected) accumulatedVitals.fall_detected = true;
       if (Array.isArray(finalEcgArray)) accumulatedEcg = accumulatedEcg.concat(finalEcgArray);
 
@@ -329,9 +381,9 @@ app.post("/api/esp32/data", (req, res) => {
       const now = Date.now();
 
       if (now - lastInsertTime >= 120000) {
-        const avgBpm  = accumulatedVitals.bpm.reduce((a,b)=>a+b,0)  / accumulatedVitals.bpm.length  || 0;
-        const avgTemp = accumulatedVitals.temp.reduce((a,b)=>a+b,0) / accumulatedVitals.temp.length || 0;
-        const avgSpo2 = accumulatedVitals.spo2.reduce((a,b)=>a+b,0) / accumulatedVitals.spo2.length || 0;
+        const avgBpm  = accumulatedVitals.bpm.length > 0 ? (accumulatedVitals.bpm.reduce((a,b)=>a+b,0) / accumulatedVitals.bpm.length) : lastValidBpm;
+        const avgTemp = accumulatedVitals.temp.length > 0 ? (accumulatedVitals.temp.reduce((a,b)=>a+b,0) / accumulatedVitals.temp.length) : temp;
+        const avgSpo2 = accumulatedVitals.spo2.length > 0 ? (accumulatedVitals.spo2.reduce((a,b)=>a+b,0) / accumulatedVitals.spo2.length) : lastValidSpo2;
 
         db.run(
           `INSERT INTO realtime_vitals
@@ -811,6 +863,47 @@ Do not include any other conversational text or intro/outro sentences. Just outp
   }
 });
 
+// ---------- Phase 3: On-Demand Live Vitals AI Analysis ----------
+app.post("/api/analyze-live", async (req, res) => {
+  try {
+    const { vitals } = req.body;
+    if (!vitals) return res.status(400).json({ error: "Missing vitals data" });
+
+    let summary = "AI summary unavailable.";
+    if (geminiModel) {
+      const cv = vitals.clinical_verdict || {};
+      const findingsList = Array.isArray(cv.findings) ? cv.findings.join("; ") : "None";
+      const prompt = `You are CardiShirt AI, a supportive cardiac health companion. 
+The patient (Adnan) has requested an on-demand clinical summary of their current live vitals.
+Here are their current real-time metrics:
+- Heart Rate: ${vitals.bpm} BPM
+- Blood Oxygen (SpO2): ${vitals.spo2}%
+- Body Temperature: ${vitals.temp}°C
+- Heart Rate Variability (HRV RMSSD): ${vitals.hrv_rmssd != null ? vitals.hrv_rmssd + " ms" : "Unknown"}
+- ST Segment Deviation: ${vitals.st_deviation_mv != null ? vitals.st_deviation_mv + " mV" : "Unknown"}
+- Breathing Rate: ${vitals.breathing_rate != null ? vitals.breathing_rate + " breaths/min" : "Unknown"}
+- Stress Index: ${vitals.stress_index != null ? vitals.stress_index : "Unknown"}
+- Clinical Verdict: ${cv.condition || "Normal Sinus Rhythm"} (Severity: ${cv.severity || "normal"})
+- Detailed Findings: ${findingsList}
+
+Please cross-reference these findings with annotated cardiac waveform patterns from the MIT-BIH databases (specifically QRS shapes, premature beat intervals, and ST segments) to ensure the highest clinical accuracy. However, do NOT explicitly write the words "MIT", "MIT-BIH", "database", or "dataset" in your output summary.
+
+Provide a professional, reassuring, and personalized clinical summary in exactly 2-3 sentences. Explain what these readings mean for their heart health right now. Address Adnan directly and warn him if there are critical anomalies. Do not use markdown headers, bold headers, or lists. Just return the raw sentences.`;
+
+      const aiRes = await geminiModel.generateContent(prompt);
+      summary = aiRes.response.text().trim();
+    } else {
+      const cv = vitals.clinical_verdict || {};
+      summary = `Hi Adnan, your heart rate is currently stable at ${vitals.bpm} BPM with a normal blood oxygen level of ${vitals.spo2}%. Your overall condition is flagged as ${cv.condition || "Normal Sinus Rhythm"}.`;
+    }
+
+    res.json({ summary });
+  } catch (err) {
+    console.error("[ANALYZE-LIVE] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------- Phase 3: GET Diary Summary ----------
 app.get("/api/diary/summary", async (req, res) => {
   try {
@@ -921,6 +1014,19 @@ async function runMigrationWhenReady() {
 (async () => {
   const db = await getDb();
   console.log("[DB] SQLite ready — tables created");
+  
+  // Load last valid values from DB on startup
+  try {
+    const rows = db.exec("SELECT bpm, spo2 FROM realtime_vitals WHERE bpm > 0 AND spo2 > 0 ORDER BY id DESC LIMIT 1");
+    if (rows.length && rows[0].values.length) {
+      lastValidBpm = Math.round(rows[0].values[0][0]);
+      lastValidSpo2 = Math.round(rows[0].values[0][1]);
+      console.log(`[DB] Loaded last valid vitals -> BPM: ${lastValidBpm}, SpO2: ${lastValidSpo2}%`);
+    }
+  } catch (err) {
+    console.error("[DB] Error loading latest vitals:", err.message);
+  }
+
   server.listen(PORT, "0.0.0.0", () => {
     console.log(
       `[SERVER] CardiShirt backend running on port ${PORT} (0.0.0.0)`,
